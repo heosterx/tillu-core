@@ -2,12 +2,18 @@ import { config } from "../../config";
 
 const BASE_URL = "https://api.cerebras.ai/v1";
 
-// Available Cerebras models (as of 2025)
+/**
+ * Cerebras free models (as of 2025):
+ *   GLM-4-9B  — free via OSSZ.ai on Cerebras, fast inference
+ *
+ * Paid models (not available on free tier):
+ *   llama-3.3-70b, llama-4-scout-17b-16e-instruct, llama3.1-8b
+ */
 export const CEREBRAS_MODELS = [
-  "llama-3.3-70b",
-  "llama-4-scout-17b-16e-instruct",
-  "llama3.1-8b",
+  "GLM-4-9B",
 ] as const;
+
+export const CEREBRAS_DEFAULT_MODEL = "GLM-4-9B";
 
 export type CerebrasModel = typeof CEREBRAS_MODELS[number];
 
@@ -20,17 +26,16 @@ function getModel(): string {
   const model = config.llm.cerebrasModel;
   if (!CEREBRAS_MODELS.includes(model as CerebrasModel)) {
     console.warn(
-      `[Cerebras] Unknown model "${model}". Valid models: ${CEREBRAS_MODELS.join(", ")}. Falling back to llama-3.3-70b.`
+      `[Cerebras] Unknown model "${model}". Free model is: ${CEREBRAS_DEFAULT_MODEL}. Falling back.`
     );
-    return "llama-3.3-70b";
+    return CEREBRAS_DEFAULT_MODEL;
   }
   return model;
 }
 
 /**
- * Call Cerebras — primary classifier.
- * Fastest free inference available. Used for Stage 1 classification.
- * Model configurable via CEREBRAS_MODEL env var (default: llama-3.3-70b).
+ * Call Cerebras GLM-4-9B — primary classifier.
+ * Fastest free inference. Used for Stage 1 classification.
  */
 export async function callCerebras(
   messages: ChatMessage[],
@@ -64,21 +69,20 @@ export async function callCerebras(
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Cerebras error ${res.status}: ${err}`);
+    throw new Error(`Cerebras error ${res.status}: ${err.slice(0, 120)}`);
   }
 
   const data = await res.json() as {
     choices: Array<{ message: { content: string } }>;
   };
 
-  const text = data.choices[0]?.message?.content;
+  const text = data.choices?.[0]?.message?.content;
   if (!text) throw new Error("Cerebras returned empty response");
   return text;
 }
 
 /**
  * Verify Cerebras API key and model are working.
- * Called at startup and exposed via /health.
  */
 export async function verifyCerebras(): Promise<{
   ok: boolean;
@@ -88,7 +92,7 @@ export async function verifyCerebras(): Promise<{
 }> {
   const key = config.llm.cerebrasKey;
   if (!key) {
-    return { ok: false, model: config.llm.cerebrasModel, latency_ms: 0, error: "CEREBRAS_API_KEY not set" };
+    return { ok: false, model: CEREBRAS_DEFAULT_MODEL, latency_ms: 0, error: "CEREBRAS_API_KEY not set" };
   }
 
   const model = getModel();
@@ -116,10 +120,9 @@ export async function verifyCerebras(): Promise<{
     }
 
     const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-    const reply = data.choices[0]?.message?.content ?? "";
-
-    return { ok: true, model, latency_ms: Date.now() - start };
+    const reply = data.choices?.[0]?.message?.content ?? "";
+    return { ok: !!reply, model, latency_ms: Date.now() - start };
   } catch (e) {
-    return { ok: false, model, latency_ms: Date.now() - start, error: (e as Error).message };
+    return { ok: false, model, latency_ms: Date.now() - start, error: (e as Error).message.slice(0, 80) };
   }
 }

@@ -1,6 +1,7 @@
 import { callCerebras } from "./providers/cerebras";
 import { callGroq } from "./providers/groq";
 import { callOpenRouter } from "./providers/openrouter";
+import { callTogether } from "./providers/together";
 import { classifierPrompt } from "./prompts";
 import type { ClassifierOutput } from "../types";
 
@@ -28,7 +29,7 @@ function parseClassifierOutput(raw: string): ClassifierOutput {
 
 /**
  * Stage 1: Classify user intent.
- * Provider chain: Cerebras → Groq → OpenRouter → default fallback
+ * Provider chain: Cerebras (GLM-4-9B) → Groq → Together AI → OpenRouter → default
  * Target latency: ~200ms
  */
 export async function classify(
@@ -38,12 +39,12 @@ export async function classify(
   const prompt = classifierPrompt(userInput, contextSummary);
   const messages = [{ role: "user" as const, content: prompt }];
 
-  // 1. Cerebras — fastest
+  // 1. Cerebras GLM-4-9B — fastest free model
   try {
     const raw = await callCerebras(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
     return parseClassifierOutput(raw);
   } catch (e) {
-    console.warn("[Classifier] Cerebras failed:", (e as Error).message);
+    console.warn("[Classifier] Cerebras failed:", (e as Error).message.slice(0, 80));
   }
 
   // 2. Groq — fast fallback
@@ -51,18 +52,26 @@ export async function classify(
     const raw = await callGroq(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
     return parseClassifierOutput(raw);
   } catch (e) {
-    console.warn("[Classifier] Groq failed:", (e as Error).message);
+    console.warn("[Classifier] Groq failed:", (e as Error).message.slice(0, 80));
   }
 
-  // 3. OpenRouter — tertiary
+  // 3. Together AI — free Llama-3.3-70B
+  try {
+    const raw = await callTogether(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
+    return parseClassifierOutput(raw);
+  } catch (e) {
+    console.warn("[Classifier] Together AI failed:", (e as Error).message.slice(0, 80));
+  }
+
+  // 4. OpenRouter — tertiary
   try {
     const raw = await callOpenRouter(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
     return parseClassifierOutput(raw);
   } catch (e) {
-    console.warn("[Classifier] OpenRouter failed:", (e as Error).message);
+    console.warn("[Classifier] OpenRouter failed:", (e as Error).message.slice(0, 80));
   }
 
-  // 4. Safe default — treat as conversation, no tools
+  // 5. Safe default — treat as conversation, no tools
   console.warn("[Classifier] All providers failed — using default output");
   return DEFAULT_OUTPUT;
 }

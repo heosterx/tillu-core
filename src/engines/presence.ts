@@ -7,6 +7,7 @@ import {
   getLatestBriefing,
 } from "../tools/memory.tool";
 import { speak } from "../tools/voice.tool";
+import { runOnlineChecks } from "./proactive";
 import { HEOSTER } from "../types";
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -118,6 +119,9 @@ async function triggerWakeUp(): Promise<void> {
     });
 
     console.log(`[Presence] Wake-Up delivered to ${HEOSTER.nickname}`);
+
+    // Run online checks after greeting — birthdays, tracked topics, etc.
+    void runOnlineChecks();
   } catch (e) {
     console.error("[Presence] Wake-Up Sequence failed:", (e as Error).message);
     emitToUI({

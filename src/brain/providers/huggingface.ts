@@ -1,11 +1,12 @@
 import { config } from "../../config";
 import type { ChatMessage } from "./cerebras";
 
-const BASE_URL = "https://router.huggingface.co/v1";
+// HuggingFace Inference API — OpenAI-compatible endpoint
+const BASE_URL = "https://api-inference.huggingface.co/v1";
 
 /**
  * Call HuggingFace Inference API — last resort fallback.
- * Uses OpenAI-compatible chat completions endpoint via router.
+ * Uses the OpenAI-compatible /v1/chat/completions endpoint.
  */
 export async function callHuggingFace(
   messages: ChatMessage[],
@@ -23,22 +24,23 @@ export async function callHuggingFace(
     body: JSON.stringify({
       model: config.llm.hfModel,
       messages,
-      max_tokens: options?.maxTokens ?? 1024,
+      max_tokens: options?.maxTokens ?? 512,
       temperature: options?.temperature ?? 0.3,
+      stream: false,
     }),
     signal: AbortSignal.timeout(30000),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`HuggingFace error ${res.status}: ${err}`);
+    throw new Error(`HuggingFace error ${res.status}: ${err.slice(0, 120)}`);
   }
 
   const data = await res.json() as {
     choices: Array<{ message: { content: string } }>;
   };
 
-  const text = data.choices[0]?.message?.content;
+  const text = data.choices?.[0]?.message?.content;
   if (!text) throw new Error("HuggingFace returned empty response");
   return text;
 }

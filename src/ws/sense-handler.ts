@@ -1,10 +1,15 @@
 import type WebSocket from "ws";
 import type { InboundMessage, SenseContext } from "../types";
 import { markConnected, markDisconnected } from "../engines/presence";
+import { runProactiveTick } from "../engines/proactive";
 
 // Latest context from Sense — read by agentic loop before decisions
 let latestContext: SenseContext | null = null;
 let latestScreenshot: string | null = null;
+
+// Throttle proactive ticks — run at most every 30s, not every 3s
+let lastProactiveTick = 0;
+const PROACTIVE_TICK_INTERVAL_MS = 30_000;
 
 export function getLatestContext(): SenseContext | null {
   return latestContext;
@@ -39,9 +44,17 @@ export function handleSenseConnection(ws: WebSocket): void {
         }
       } else if (msg.type === "context") {
         latestContext = msg.data;
+
         // Extract screenshot if included
         if ((msg.data as SenseContext & { screenshot?: string }).screenshot) {
           latestScreenshot = (msg.data as SenseContext & { screenshot?: string }).screenshot ?? null;
+        }
+
+        // Run proactive tick (throttled to every 30s)
+        const now = Date.now();
+        if (now - lastProactiveTick > PROACTIVE_TICK_INTERVAL_MS) {
+          lastProactiveTick = now;
+          void runProactiveTick(msg.data);
         }
       }
     } catch (e) {

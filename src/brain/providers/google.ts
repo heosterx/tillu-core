@@ -2,15 +2,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from "../../config";
 import type { ChatMessage } from "./cerebras";
 
-let _client: GoogleGenerativeAI | null = null;
-
+// Don't cache the client — key may change or be invalid
 function getClient(): GoogleGenerativeAI {
-  if (!_client) {
-    const key = config.llm.googleKey;
-    if (!key) throw new Error("GOOGLE_AI_API_KEY not set");
-    _client = new GoogleGenerativeAI(key);
-  }
-  return _client;
+  const key = config.llm.googleKey;
+  if (!key) throw new Error("GOOGLE_AI_API_KEY not set");
+  return new GoogleGenerativeAI(key);
 }
 
 /**

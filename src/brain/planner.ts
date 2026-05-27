@@ -1,4 +1,5 @@
 import { callGroq } from "./providers/groq";
+import { callTogether } from "./providers/together";
 import { callOpenRouter } from "./providers/openrouter";
 import { callGoogle } from "./providers/google";
 import { callHuggingFace } from "./providers/huggingface";
@@ -19,7 +20,7 @@ function parseToolCalls(raw: string): ToolCall[] {
 
 /**
  * Stage 2: Plan tool calls for a given intent.
- * Provider chain: Groq (function calling) → OpenRouter → Gemini → HF
+ * Provider chain: Groq → Together AI → OpenRouter → Gemini → HF
  * Target latency: ~500ms
  */
 export async function plan(
@@ -27,7 +28,8 @@ export async function plan(
   userInput: string,
   contextSummary: string
 ): Promise<PlannerOutput> {
-  // 1. Groq with native function calling
+
+  // 1. Groq — native function calling, most reliable for structured output
   try {
     const messages = [
       {
@@ -40,10 +42,21 @@ export async function plan(
     const toolCalls = parseToolCalls(raw);
     if (toolCalls.length > 0) return { tool_calls: toolCalls };
   } catch (e) {
-    console.warn("[Planner] Groq failed:", (e as Error).message);
+    console.warn("[Planner] Groq failed:", (e as Error).message.slice(0, 80));
   }
 
-  // 2. OpenRouter — JSON mode fallback
+  // 2. Together AI — free Llama-3.3-70B, JSON mode
+  try {
+    const prompt = plannerPrompt(intent, userInput, contextSummary, TOOL_SCHEMA_TEXT);
+    const messages = [{ role: "user" as const, content: prompt }];
+    const raw = await callTogether(messages, { maxTokens: 512, temperature: 0, jsonMode: true });
+    const toolCalls = parseToolCalls(raw);
+    if (toolCalls.length > 0) return { tool_calls: toolCalls };
+  } catch (e) {
+    console.warn("[Planner] Together AI failed:", (e as Error).message.slice(0, 80));
+  }
+
+  // 3. OpenRouter — JSON mode fallback
   try {
     const prompt = plannerPrompt(intent, userInput, contextSummary, TOOL_SCHEMA_TEXT);
     const messages = [{ role: "user" as const, content: prompt }];
@@ -51,10 +64,10 @@ export async function plan(
     const toolCalls = parseToolCalls(raw);
     if (toolCalls.length > 0) return { tool_calls: toolCalls };
   } catch (e) {
-    console.warn("[Planner] OpenRouter failed:", (e as Error).message);
+    console.warn("[Planner] OpenRouter failed:", (e as Error).message.slice(0, 80));
   }
 
-  // 3. Gemini — fallback
+  // 4. Gemini — fallback
   try {
     const prompt = plannerPrompt(intent, userInput, contextSummary, TOOL_SCHEMA_TEXT);
     const messages = [{ role: "user" as const, content: prompt }];
@@ -62,10 +75,10 @@ export async function plan(
     const toolCalls = parseToolCalls(raw);
     if (toolCalls.length > 0) return { tool_calls: toolCalls };
   } catch (e) {
-    console.warn("[Planner] Gemini failed:", (e as Error).message);
+    console.warn("[Planner] Gemini failed:", (e as Error).message.slice(0, 80));
   }
 
-  // 4. HuggingFace — last resort
+  // 5. HuggingFace — last resort
   try {
     const prompt = plannerPrompt(intent, userInput, contextSummary, TOOL_SCHEMA_TEXT);
     const messages = [{ role: "user" as const, content: prompt }];
@@ -73,9 +86,8 @@ export async function plan(
     const toolCalls = parseToolCalls(raw);
     if (toolCalls.length > 0) return { tool_calls: toolCalls };
   } catch (e) {
-    console.warn("[Planner] HuggingFace failed:", (e as Error).message);
+    console.warn("[Planner] HuggingFace failed:", (e as Error).message.slice(0, 80));
   }
 
-  // Empty plan — no tools
   return { tool_calls: [] };
 }
