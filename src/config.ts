@@ -35,7 +35,7 @@ export const config = {
   },
   services: {
     memoryUrl:  opt("TILLU_MEMORY_URL",  "https://tillu-memory.vercel.app"),
-    searchUrl:  opt("TILLU_SEARCH_URL",  "https://tillu-search.vercel.app"),
+    searchUrl:  opt("TILLU_SEARCH_URL",  "https://tillu-smart-search.vercel.app"),
     voiceUrl:   opt("TILLU_VOICE_URL",   "https://tillu-voice.vercel.app"),
     seeUrl:     opt("TILLU_SEE_URL",     "https://tillu-see.vercel.app"),
   },
