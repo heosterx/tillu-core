@@ -3,6 +3,7 @@ import { getPresenceState } from "../engines/presence";
 import { getDreamLoopStatus } from "../engines/dream-loop";
 import { isHandsConnected } from "../tools/hands.tool";
 import { verifyCerebras, CEREBRAS_MODELS } from "../brain/providers/cerebras";
+import { getHealthStatus } from "../brain/providers/router";
 import { config } from "../config";
 
 /**
@@ -32,38 +33,21 @@ export async function healthHandler(req: Request, res: Response): Promise<void> 
     },
     dream_loop: dream,
     providers: {
+      router_health: getHealthStatus(),
       cerebras: {
         key_set: !!config.llm.cerebrasKey,
-        model: config.llm.cerebrasModel,
-        available_models: CEREBRAS_MODELS,
+        models: ["gpt-oss-120b", "zai-glm-4.7"],
         verified: cerebrasCheck.ok,
         latency_ms: cerebrasCheck.latency_ms,
         error: cerebrasCheck.error ?? null,
-        role: "Stage 1: Classifier (fastest)",
       },
       groq: {
         key_set: !!config.llm.groqKey,
-        model: config.llm.groqModel,
-        status: fmtKey(config.llm.groqKey, "Planner"),
-        role: "Stage 2: Planner (function calling)",
-      },
-      google: {
-        key_set: !!config.llm.googleKey,
-        model: config.llm.googleModel,
-        status: fmtKey(config.llm.googleKey, "Writer"),
-        role: "Stage 3: Writer (quality responses)",
+        models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-20b", "qwen/qwen3-32b", "allam-2-7b"],
       },
       openrouter: {
         key_set: !!config.llm.openrouterKey,
-        model: config.llm.openrouterModel,
-        status: fmtKey(config.llm.openrouterKey, "Fallback"),
-        role: "Fallback for all stages",
-      },
-      huggingface: {
-        key_set: !!config.llm.hfKey,
-        model: config.llm.hfModel,
-        status: fmtKey(config.llm.hfKey, "Last resort"),
-        role: "Last resort fallback",
+        models: ["poolside/laguna-xs.2:free", "nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free", "z-ai/glm-4.5-air:free"],
       },
     },
     services: {

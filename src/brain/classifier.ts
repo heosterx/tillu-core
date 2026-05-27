@@ -1,7 +1,4 @@
-import { callCerebras } from "./providers/cerebras";
-import { callGroq } from "./providers/groq";
-import { callOpenRouter } from "./providers/openrouter";
-import { callTogether } from "./providers/together";
+import { routeClassifier } from "./providers/router";
 import { classifierPrompt } from "./prompts";
 import type { ClassifierOutput } from "../types";
 
@@ -15,7 +12,12 @@ const DEFAULT_OUTPUT: ClassifierOutput = {
 };
 
 function parseClassifierOutput(raw: string): ClassifierOutput {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  // Strip reasoning preamble — reasoning models think out loud before the JSON
+  // Find the last JSON object in the output
+  const jsonMatch = raw.match(/\{[^{}]*"intent"[^{}]*\}/s) ?? raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("No JSON found in classifier output");
+
+  const cleaned = jsonMatch[0].trim();
   const parsed = JSON.parse(cleaned) as Partial<ClassifierOutput>;
   return {
     intent: parsed.intent ?? "conversation",
@@ -29,7 +31,7 @@ function parseClassifierOutput(raw: string): ClassifierOutput {
 
 /**
  * Stage 1: Classify user intent.
- * Provider chain: Cerebras (GLM-4-9B) → Groq → Together AI → OpenRouter → default
+ * Uses the load-balanced router — equal load across Groq, Cerebras, OpenRouter.
  * Target latency: ~200ms
  */
 export async function classify(
@@ -39,39 +41,11 @@ export async function classify(
   const prompt = classifierPrompt(userInput, contextSummary);
   const messages = [{ role: "user" as const, content: prompt }];
 
-  // 1. Cerebras GLM-4-9B — fastest free model
   try {
-    const raw = await callCerebras(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
+    const raw = await routeClassifier(messages);
     return parseClassifierOutput(raw);
   } catch (e) {
-    console.warn("[Classifier] Cerebras failed:", (e as Error).message.slice(0, 80));
+    console.warn("[Classifier] All providers failed — using default:", (e as Error).message.slice(0, 80));
+    return DEFAULT_OUTPUT;
   }
-
-  // 2. Groq — fast fallback
-  try {
-    const raw = await callGroq(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
-    return parseClassifierOutput(raw);
-  } catch (e) {
-    console.warn("[Classifier] Groq failed:", (e as Error).message.slice(0, 80));
-  }
-
-  // 3. Together AI — free Llama-3.3-70B
-  try {
-    const raw = await callTogether(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
-    return parseClassifierOutput(raw);
-  } catch (e) {
-    console.warn("[Classifier] Together AI failed:", (e as Error).message.slice(0, 80));
-  }
-
-  // 4. OpenRouter — tertiary
-  try {
-    const raw = await callOpenRouter(messages, { maxTokens: 128, temperature: 0, jsonMode: true });
-    return parseClassifierOutput(raw);
-  } catch (e) {
-    console.warn("[Classifier] OpenRouter failed:", (e as Error).message.slice(0, 80));
-  }
-
-  // 5. Safe default — treat as conversation, no tools
-  console.warn("[Classifier] All providers failed — using default output");
-  return DEFAULT_OUTPUT;
 }
