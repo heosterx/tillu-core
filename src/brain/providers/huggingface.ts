@@ -2,7 +2,6 @@ import { config } from "../../config";
 import type { ChatMessage } from "./cerebras";
 
 const BASE_URL = "https://router.huggingface.co/v1";
-const MODEL = "meta-llama/Llama-3.3-70B-Instruct";
 
 /**
  * Call HuggingFace Inference API — last resort fallback.
@@ -22,7 +21,7 @@ export async function callHuggingFace(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: MODEL,
+      model: config.llm.hfModel,
       messages,
       max_tokens: options?.maxTokens ?? 1024,
       temperature: options?.temperature ?? 0.3,

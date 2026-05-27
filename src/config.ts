@@ -17,10 +17,15 @@ export const config = {
   },
   llm: {
     cerebrasKey:    opt("CEREBRAS_API_KEY", ""),
+    cerebrasModel:  opt("CEREBRAS_MODEL", "llama-3.3-70b"),
     groqKey:        opt("GROQ_API_KEY", ""),
+    groqModel:      opt("GROQ_MODEL", "llama-3.3-70b-versatile"),
     googleKey:      opt("GOOGLE_AI_API_KEY", ""),
+    googleModel:    opt("GOOGLE_MODEL", "gemini-2.5-flash-lite"),
     openrouterKey:  opt("OPENROUTER_API_KEY", ""),
+    openrouterModel: opt("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
     hfKey:          opt("HF_API_KEY", ""),
+    hfModel:        opt("HF_MODEL", "meta-llama/Llama-3.3-70B-Instruct"),
     togetherKey:    opt("TOGETHER_AI_API_KEY", ""),
   },
   voice: {

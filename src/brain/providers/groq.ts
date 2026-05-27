@@ -31,7 +31,7 @@ export async function callGroq(
   // Build request — use any to avoid SDK version type conflicts
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const req: any = {
-    model: "llama-3.3-70b-versatile",
+    model: config.llm.groqModel,
     messages,
     max_tokens: options?.maxTokens ?? 1024,
     temperature: options?.temperature ?? 0.1,

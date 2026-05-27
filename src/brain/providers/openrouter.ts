@@ -2,8 +2,6 @@ import { config } from "../../config";
 import type { ChatMessage } from "./cerebras";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
-// Best free model on OpenRouter as of 2025
-const MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 /**
  * Call OpenRouter free tier — tertiary fallback for classifier + planner.
@@ -17,7 +15,7 @@ export async function callOpenRouter(
   if (!key) throw new Error("OPENROUTER_API_KEY not set");
 
   const body: Record<string, unknown> = {
-    model: MODEL,
+    model: config.llm.openrouterModel,
     messages,
     max_tokens: options?.maxTokens ?? 1024,
     temperature: options?.temperature ?? 0.1,

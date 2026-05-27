@@ -2,7 +2,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from "../../config";
 import type { ChatMessage } from "./cerebras";
 
-const MODEL = "gemini-2.5-flash-lite";
 let _client: GoogleGenerativeAI | null = null;
 
 function getClient(): GoogleGenerativeAI {
@@ -24,7 +23,7 @@ export async function callGoogle(
 ): Promise<string> {
   const client = getClient();
   const model = client.getGenerativeModel({
-    model: MODEL,
+    model: config.llm.googleModel,
     generationConfig: {
       maxOutputTokens: options?.maxTokens ?? 1024,
       temperature: options?.temperature ?? 0.7,
@@ -62,7 +61,7 @@ export async function callGoogleVision(
   mimeType: string
 ): Promise<string> {
   const client = getClient();
-  const model = client.getGenerativeModel({ model: MODEL });
+  const model = client.getGenerativeModel({ model: config.llm.googleModel });
 
   const systemMsg = messages.find((m) => m.role === "system");
   const lastMsg = messages.filter((m) => m.role !== "system").pop();
