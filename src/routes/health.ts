@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { getPresenceState } from "../engines/presence";
 import { getDreamLoopStatus } from "../engines/dream-loop";
 import { isHandsConnected } from "../tools/hands.tool";
-import { verifyCerebras, CEREBRAS_MODELS } from "../brain/providers/cerebras";
+import { verifyCerebras } from "../brain/providers/cerebras";
 import { getHealthStatus } from "../brain/providers/router";
 import { config } from "../config";
 
@@ -10,12 +10,9 @@ import { config } from "../config";
  * GET /health
  * Full system health — live provider verification, connection states, dream loop.
  */
-export async function healthHandler(req: Request, res: Response): Promise<void> {
+export async function healthHandler(_req: Request, res: Response): Promise<void> {
   const presence = getPresenceState();
   const dream = getDreamLoopStatus();
-
-  const fmtKey = (key: string, label: string) =>
-    key ? `✅ set (${key.length} chars)` : `❌ not set — ${label} disabled`;
 
   // Live Cerebras verification (fast — 5s timeout)
   const cerebrasCheck = await verifyCerebras();

@@ -14,6 +14,13 @@ import { HEOSTER } from "../types";
 
 let isRunning = false;
 
+// In-memory dream state (persisted to Memory service after each cycle)
+const dreamState = {
+  last_consolidated: null as string | null,
+  last_briefing_prepared: null as string | null,
+  last_world_monitor: null as string | null,
+};
+
 // ─── Dream Loop Scheduler ─────────────────────────────────────────────────────
 
 export function startDreamLoop(): void {
@@ -82,6 +89,7 @@ async function runMorningPrep(): Promise<void> {
       last_briefing_prepared: nowISO(),
       morning_briefing_delivered_today: false,
     });
+    dreamState.last_briefing_prepared = nowISO();
 
     console.log("[DreamLoop] Morning briefing prepared");
   } catch (e) {
@@ -94,10 +102,11 @@ async function runMorningPrep(): Promise<void> {
 async function runMemoryConsolidation(): Promise<void> {
   console.log("[DreamLoop] Running memory consolidation...");
   try {
-    // Consolidate the current day's session
     const sessionId = `sess_${new Date().toISOString().split("T")[0]}`;
     await consolidateSession(sessionId);
-    await updateDreamState({ last_consolidated: nowISO() });
+    const ts = nowISO();
+    await updateDreamState({ last_consolidated: ts });
+    dreamState.last_consolidated = ts;
     console.log("[DreamLoop] Memory consolidated");
   } catch (e) {
     console.error("[DreamLoop] Consolidation failed:", (e as Error).message);
@@ -114,7 +123,9 @@ async function runWorldMonitor(): Promise<void> {
     // Search for updates on tracked topics
     await search(`latest news ${topics}`, "fast", "news");
 
-    await updateDreamState({ last_world_monitor: nowISO() });
+    const ts = nowISO();
+    await updateDreamState({ last_world_monitor: ts });
+    dreamState.last_world_monitor = ts;
     console.log("[DreamLoop] World monitor complete");
   } catch (e) {
     console.error("[DreamLoop] World monitor failed:", (e as Error).message);
@@ -129,15 +140,22 @@ async function runSkillReview(): Promise<void> {
 
 export function getDreamLoopStatus(): {
   running: boolean;
+  last_consolidated: string | null;
+  last_briefing_prepared: string | null;
+  last_world_monitor: string | null;
   next_morning_prep: string;
 } {
   const now = new Date();
   const nextMorning = new Date();
+  // 5:30 AM IST = 00:00 UTC
   nextMorning.setUTCHours(0, 0, 0, 0);
   if (now >= nextMorning) nextMorning.setDate(nextMorning.getDate() + 1);
 
   return {
     running: isRunning,
+    last_consolidated: dreamState.last_consolidated,
+    last_briefing_prepared: dreamState.last_briefing_prepared,
+    last_world_monitor: dreamState.last_world_monitor,
     next_morning_prep: nextMorning.toISOString(),
   };
 }
