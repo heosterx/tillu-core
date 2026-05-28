@@ -44,6 +44,39 @@ export const WORKING_MODELS = {
   ],
 } as const;
 
+/**
+ * Strip reasoning preamble from models that think out loud before answering.
+ * GLM-4.7 and some Nemotron models output numbered analysis steps
+ * before the actual response. We extract just the final answer.
+ */
+function stripReasoningPreamble(text: string): string {
+  const t = text.trim();
+
+  // Pattern 1: "1. **Analyze the Request:**..." — numbered analysis preamble
+  if (/^1\.\s+\*\*/.test(t)) {
+    // Try to find explicit "Response:" section
+    const responseMatch = t.match(/\*\*(?:Response|Final Response|Output|Answer)[:\s*]+\*\*\s*([\s\S]+?)(?:\n\n\d+\.|$)/i);
+    if (responseMatch?.[1]?.trim()) return responseMatch[1].trim();
+
+    // Fallback: last non-empty paragraph that isn't a numbered step
+    const paragraphs = t.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+    const last = paragraphs[paragraphs.length - 1] ?? t;
+    if (!/^\d+\.\s+\*\*/.test(last)) return last;
+  }
+
+  // Pattern 2: "We are initiating a conversation..." — proactive preamble
+  if (/^We are (initiating|given|asked)/i.test(t)) {
+    const lines = t.split("\n").map(l => l.trim()).filter(Boolean);
+    const msgLine = lines.find(l =>
+      !l.startsWith("We are") && !l.startsWith("The ") &&
+      !l.startsWith("*") && l.length > 10
+    );
+    if (msgLine) return msgLine;
+  }
+
+  return text;
+}
+
 // ─── Reasoning models — content lives in message.reasoning, not message.content
 
 const REASONING_MODELS = new Set([
@@ -197,14 +230,18 @@ async function callHTTP(
     }
 
     // Standard content or reasoning fallback
-    const text =
+    const rawText =
       choice?.message?.content ||
       choice?.message?.reasoning_content ||
       choice?.message?.reasoning ||
       choice?.text ||
       "";
 
-    if (!text) throw new Error("Empty response");
+    if (!rawText) throw new Error("Empty response");
+
+    // Strip reasoning preamble from models that think out loud before answering.
+    // Pattern: numbered analysis steps before the actual response.
+    const text = stripReasoningPreamble(rawText);
     return text;
   } finally {
     clearTimeout(t);

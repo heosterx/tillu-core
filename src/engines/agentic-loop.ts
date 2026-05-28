@@ -4,9 +4,9 @@ import { executeAction, isHandsConnected } from "../tools/hands.tool";
 import { search, formatSearchResult } from "../tools/search.tool";
 import { see } from "../tools/see.tool";
 import { speak } from "../tools/voice.tool";
-import { writeMemory, logAction, recordSkillFeedback } from "../tools/memory.tool";
+import { writeMemory, searchMemory, logAction } from "../tools/memory.tool";
 import { emitToUI } from "./presence";
-import type { ActionStep, TilluOutput, OutboundUIMessage } from "../types";
+import type { ActionStep, TilluOutput } from "../types";
 
 export interface LoopInput {
   userInput: string;
@@ -19,7 +19,12 @@ export interface LoopInput {
 
 /**
  * The main agentic loop.
- * Runs the 4-stage pipeline, then executes response + action in parallel.
+ *
+ * Pipeline now handles cloud tools (search, memory_read, see) internally
+ * so the writer gets real data. This loop handles:
+ *   - Delivering the response (text + audio) to UI
+ *   - Executing desktop action steps (hands, browser, calendar, etc.)
+ *   - Saving the interaction to memory
  */
 export async function runAgenticLoop(input: LoopInput): Promise<void> {
   const { userInput, contextSummary, userState, sessionId } = input;
@@ -27,23 +32,26 @@ export async function runAgenticLoop(input: LoopInput): Promise<void> {
 
   emitToUI({ type: "thought", step: "Thinking...", icon: "brain" });
 
-  // Run pipeline (classify + plan in parallel with write)
   const { output, classification, latency_ms: pipelineMs } = await runPipeline({
     userInput,
     contextSummary,
     userState,
     image: input.image,
+    latestScreenshot: input.latestScreenshot,
   });
 
-  console.log(`[Loop] Pipeline: ${pipelineMs}ms | intent=${classification.intent} | has_response=${classification.has_response} | has_action=${classification.has_action}`);
+  console.log(
+    `[Loop] Pipeline: ${pipelineMs}ms | intent=${classification.intent}` +
+    ` | has_response=${classification.has_response} | has_action=${classification.has_action}`
+  );
 
-  // Execute response and action in parallel
+  // Response and desktop action execute in parallel
   await Promise.all([
-    classification.has_response ? executeResponsePath(output, userInput, contextSummary, userState) : Promise.resolve(),
-    classification.has_action && !classification.short_circuit ? executeActionPath(output, sessionId) : Promise.resolve(),
+    output.response ? deliverResponse(output) : Promise.resolve(),
+    output.action   ? executeActionPath(output, sessionId) : Promise.resolve(),
   ]);
 
-  // Save interaction to memory
+  // Save interaction to memory (fire-and-forget)
   void writeMemory(
     `Heoster asked: "${userInput.slice(0, 200)}"`,
     "event",
@@ -54,30 +62,20 @@ export async function runAgenticLoop(input: LoopInput): Promise<void> {
   console.log(`[Loop] Total: ${Date.now() - loopStart}ms`);
 }
 
-// ─── Response Path ────────────────────────────────────────────────────────────
+// ─── Deliver response to UI ───────────────────────────────────────────────────
 
-async function executeResponsePath(
-  output: TilluOutput,
-  userInput: string,
-  contextSummary: string,
-  userState?: string
-): Promise<void> {
+async function deliverResponse(output: TilluOutput): Promise<void> {
   if (!output.response) return;
 
-  let responseText = output.response.text;
+  emitToUI({ type: "response_text", text: output.response.text });
 
-  // If there are tool results from action path, we may need to enrich the response
-  // For now emit what we have — the writer already used context
-  emitToUI({ type: "response_text", text: responseText });
-
-  // Get audio
-  const audioUrl = await speak(responseText, output.response.lang ?? "hi");
+  const audioUrl = await speak(output.response.text, output.response.lang ?? "hi");
   if (audioUrl) {
     emitToUI({ type: "response_audio", audio_url: audioUrl });
   }
 }
 
-// ─── Action Path ──────────────────────────────────────────────────────────────
+// ─── Execute desktop action steps ────────────────────────────────────────────
 
 async function executeActionPath(output: TilluOutput, sessionId: string): Promise<void> {
   if (!output.action || output.action.plan.length === 0) return;
@@ -85,10 +83,9 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
   const action = output.action;
   const actionStart = Date.now();
 
-  // Emit action plan to UI
   emitToUI({ type: "action_start", action_id: action.id, plan: action.plan });
 
-  // Handle confirmation gate
+  // Confirmation gate
   if (action.requires_confirmation) {
     emitToUI({
       type: "action_confirm",
@@ -96,21 +93,14 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
       message: action.confirmation_message ?? "Confirm this action?",
       pending_step: action.plan[0],
     });
-    // Actual execution waits for confirm message from UI (handled in ui-handler.ts)
-    return;
+    return; // ui-handler resumes execution on confirm
   }
 
-  // Execute each step
   let allSucceeded = true;
   const toolResults: string[] = [];
 
   for (const step of action.plan) {
-    emitToUI({
-      type: "action_step",
-      action_id: action.id,
-      step_id: step.id,
-      status: "running",
-    });
+    emitToUI({ type: "action_step", action_id: action.id, step_id: step.id, status: "running" });
 
     const result = await executeStep(step);
 
@@ -118,63 +108,36 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
       step.status = "done";
       step.output = result.output;
       if (result.summary) toolResults.push(result.summary);
-      emitToUI({
-        type: "action_step",
-        action_id: action.id,
-        step_id: step.id,
-        status: "done",
-        output: result.output,
-      });
+      emitToUI({ type: "action_step", action_id: action.id, step_id: step.id, status: "done", output: result.output });
     } else {
       step.status = "failed";
       step.error = result.error;
       allSucceeded = false;
-      emitToUI({
-        type: "action_step",
-        action_id: action.id,
-        step_id: step.id,
-        status: "failed",
-        error: result.error,
-      });
-
-      // Abort on failure unless step policy is skip
+      emitToUI({ type: "action_step", action_id: action.id, step_id: step.id, status: "failed", error: result.error });
       break;
     }
   }
 
   emitToUI({ type: "action_done", action_id: action.id, success: allSucceeded });
 
-  // Log action for Self-Evolution Engine
-  void logAction(
-    action.id,
-    action.plan[0]?.action ?? "unknown",
-    allSucceeded,
-    undefined,
-    Date.now() - actionStart
-  );
+  void logAction(action.id, action.plan[0]?.action ?? "unknown", allSucceeded, undefined, Date.now() - actionStart);
 
-  // If we got tool results, emit a follow-up response card
   if (toolResults.length > 0) {
-    emitToUI({
-      type: "response_card",
-      card_type: "action_result",
-      data: { results: toolResults, success: allSucceeded },
-    });
+    emitToUI({ type: "response_card", card_type: "action_result", data: { results: toolResults, success: allSucceeded } });
   }
 }
 
-// ─── Step Executor ────────────────────────────────────────────────────────────
+// ─── Step executor — all tool types ──────────────────────────────────────────
 
 async function executeStep(step: ActionStep): Promise<{
-  success: boolean;
-  output: unknown;
-  summary?: string;
-  error?: string;
+  success: boolean; output: unknown; summary?: string; error?: string;
 }> {
   try {
     switch (step.tool) {
+
+      // ── Cloud: Search ──────────────────────────────────────────────────────
       case "search": {
-        emitToUI({ type: "thought", step: `Searching: ${(step.params.query as string) ?? "..."}`, icon: "search" });
+        emitToUI({ type: "thought", step: `Searching: ${step.params.query as string ?? "..."}`, icon: "search" });
         const result = await search(
           step.params.query as string,
           (step.params.mode as "fast" | "full") ?? "fast",
@@ -183,54 +146,92 @@ async function executeStep(step: ActionStep): Promise<{
         return { success: true, output: result, summary: formatSearchResult(result) };
       }
 
+      // ── Cloud: Vision ──────────────────────────────────────────────────────
       case "see": {
-        emitToUI({ type: "thought", step: `Analyzing image...`, icon: "eye" });
-        // Screenshot should be provided by Sense — use latest if available
-        const imageBase64 = step.params.image as string ?? "";
-        if (!imageBase64) return { success: false, output: null, error: "No image provided for see tool" };
+        emitToUI({ type: "thought", step: "Analyzing image...", icon: "eye" });
+        const imgData = step.params.image as string ?? "";
+        if (!imgData) return { success: false, output: null, error: "No image provided for see tool" };
         const result = await see(
-          step.params.task as "screen_read" | "ocr" | "describe" | "visual_qa",
-          imageBase64,
+          (step.params.task as "screen_read" | "ocr" | "describe" | "visual_qa") ?? "describe",
+          imgData,
           step.params.question as string | undefined
         );
         return { success: true, output: result, summary: result.description };
       }
 
-      case "hands": {
-        if (!isHandsConnected()) {
-          return { success: false, output: null, error: "Tillu-Hands is not connected" };
+      // ── Cloud: Memory read ─────────────────────────────────────────────────
+      case "memory": {
+        const memAction = step.params.action as string ?? "read";
+        if (memAction === "read" || step.action === "memory_read") {
+          emitToUI({ type: "thought", step: "Reading memory...", icon: "brain" });
+          const memories = await searchMemory(step.params.query as string ?? "", 5) as Array<{ content: string }>;
+          const summary = memories.map(m => m.content).join("; ");
+          return { success: true, output: memories, summary: summary || "No memories found" };
+        } else {
+          // memory_write
+          await writeMemory(
+            step.params.content as string,
+            step.params.type as string ?? "fact",
+            step.params.importance as string ?? "normal"
+          );
+          return { success: true, output: { saved: true }, summary: "Saved to memory" };
         }
-        emitToUI({ type: "thought", step: `${step.action}...`, icon: "hand" });
-        const result = await executeAction(step.action, step.params);
-        return {
-          success: result.success,
-          output: result.output,
-          error: result.error,
-          summary: result.success ? `${step.action} completed` : undefined,
-        };
       }
 
+      // ── Cloud: Voice / TTS ─────────────────────────────────────────────────
+      case "voice": {
+        const audioUrl = await speak(step.params.text as string, (step.params.lang as string) ?? "hi");
+        if (audioUrl) emitToUI({ type: "response_audio", audio_url: audioUrl });
+        return { success: true, output: { audio_url: audioUrl } };
+      }
+
+      // ── Desktop: Hands ────────────────────────────────────────────────────
+      case "hands": {
+        if (!isHandsConnected()) return { success: false, output: null, error: "Tillu-Hands is not connected" };
+        emitToUI({ type: "thought", step: `${step.params.action as string ?? step.action}...`, icon: "hand" });
+        const result = await executeAction(step.params.action as string ?? step.action, step.params);
+        return { success: result.success, output: result.output, error: result.error, summary: result.success ? `${step.action} completed` : undefined };
+      }
+
+      // ── Desktop: Browser (via Hands) ──────────────────────────────────────
       case "browser": {
-        if (!isHandsConnected()) {
-          return { success: false, output: null, error: "Tillu-Hands is not connected" };
-        }
-        emitToUI({ type: "thought", step: `Browsing ${step.params.url ?? "..."}`, icon: "browser" });
+        if (!isHandsConnected()) return { success: false, output: null, error: "Tillu-Hands is not connected" };
+        emitToUI({ type: "thought", step: `Browsing ${step.params.url as string ?? "..."}`, icon: "browser" });
         const result = await executeAction(step.action, step.params);
         return { success: result.success, output: result.output, error: result.error };
       }
 
-      case "voice": {
-        const audioUrl = await speak(step.params.text as string, step.params.lang as string ?? "hi");
-        return { success: true, output: { audio_url: audioUrl } };
+      // ── Calendar (via Memory service) ─────────────────────────────────────
+      case "calendar": {
+        emitToUI({ type: "thought", step: "Checking calendar...", icon: "calendar" });
+        const calAction = step.params.action as string ?? "read";
+
+        if (calAction === "read") {
+          // Read upcoming events from memory
+          const filter = step.params.filter as string ?? "today";
+          const memories = await searchMemory(`calendar events ${filter}`, 5) as Array<{ content: string }>;
+          const summary = memories.length > 0
+            ? memories.map(m => m.content).join("; ")
+            : `No ${filter} events found`;
+          return { success: true, output: memories, summary };
+        } else if (calAction === "add") {
+          // Save event to memory
+          const event = step.params.event as Record<string, unknown> ?? {};
+          const content = `Calendar event: ${event.title ?? "Untitled"} on ${event.date ?? "unknown date"}${event.time ? ` at ${event.time}` : ""}${event.notes ? ` — ${event.notes}` : ""}`;
+          await writeMemory(content, "event", "high");
+          return { success: true, output: { saved: true }, summary: `Added: ${event.title ?? "event"}` };
+        }
+        return { success: false, output: null, error: `Unknown calendar action: ${calAction}` };
       }
 
-      case "memory": {
-        await writeMemory(
-          step.params.content as string,
-          step.params.type as string ?? "fact",
-          step.params.importance as string ?? "normal"
-        );
-        return { success: true, output: { saved: true } };
+      // ── Create skill ──────────────────────────────────────────────────────
+      case "create_skill": {
+        emitToUI({ type: "thought", step: "Creating skill...", icon: "brain" });
+        // Save skill definition to memory for now
+        // Full YAML creation handled by skill engine (future)
+        const skillContent = `New skill: ${step.params.name as string} — trigger: "${step.params.trigger as string}" — steps: ${JSON.stringify(step.params.steps).slice(0, 200)}`;
+        await writeMemory(skillContent, "fact", "high");
+        return { success: true, output: { created: step.params.name }, summary: `Skill "${step.params.name as string}" created` };
       }
 
       default:
