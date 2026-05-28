@@ -1,8 +1,10 @@
+import path from "path";
 import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 import { config } from "./config";
 import { startDreamLoop } from "./engines/dream-loop";
+import { loadSkills } from "./engines/skill-engine";
 import { handleSenseConnection } from "./ws/sense-handler";
 import { handleHandsConnection } from "./ws/hands-handler";
 import { handleUIConnection } from "./ws/ui-handler";
@@ -12,6 +14,7 @@ import { messageHandler } from "./routes/message";
 import { presenceHandler } from "./routes/presence";
 import { briefingHandler } from "./routes/briefing";
 import { dreamStatusHandler } from "./routes/dream";
+import { skillsListHandler, skillsRunHandler, skillsCreateHandler } from "./routes/skills";
 
 // ─── Express app ──────────────────────────────────────────────────────────────
 
@@ -29,12 +32,15 @@ app.use((req, res, next) => {
 
 // ─── REST routes ──────────────────────────────────────────────────────────────
 
-app.get("/ping",         pingHandler);
-app.get("/health",       healthHandler);
-app.get("/presence",     presenceHandler);
-app.get("/briefing",     briefingHandler);
-app.get("/dream/status", dreamStatusHandler);
-app.post("/message",     messageHandler);
+app.get("/ping",          pingHandler);
+app.get("/health",        healthHandler);
+app.get("/presence",      presenceHandler);
+app.get("/briefing",      briefingHandler);
+app.get("/dream/status",  dreamStatusHandler);
+app.post("/message",      messageHandler);
+app.get("/skills",        skillsListHandler);
+app.post("/skills/run",   skillsRunHandler);
+app.post("/skills/create", skillsCreateHandler);
 
 // Root
 app.get("/", (req, res) => {
@@ -42,7 +48,7 @@ app.get("/", (req, res) => {
     service: "tillu-core",
     version: "1.0.0",
     description: "The persistent brain of TILLU AI",
-    endpoints: ["/ping", "/health", "/presence", "/briefing", "/dream/status", "/message"],
+    endpoints: ["/ping", "/health", "/presence", "/briefing", "/dream/status", "/message", "/skills", "/skills/run", "/skills/create"],
     websockets: ["/sense", "/hands", "/ui"],
   });
 });
@@ -77,6 +83,11 @@ server.listen(PORT, () => {
   console.log(`   REST:      http://localhost:${PORT}`);
   console.log(`   WebSocket: ws://localhost:${PORT}/sense | /hands | /ui`);
   console.log(`   Mode:      ${config.server.env}\n`);
+
+  // Load skills from tillu-skills/ directory (sibling of tillu-core/)
+  const skillsDir = path.resolve(__dirname, "../../tillu-skills");
+  loadSkills(skillsDir);
+  console.log(`📚 Skills loaded from ${skillsDir}`);
 
   // Start Dream Loop scheduler
   startDreamLoop();

@@ -6,7 +6,10 @@ import { see } from "../tools/see.tool";
 import { speak } from "../tools/voice.tool";
 import { writeMemory, searchMemory, logAction } from "../tools/memory.tool";
 import { emitToUI } from "./presence";
-import type { ActionStep, TilluOutput } from "../types";
+import type { ActionStep, TilluOutput, TilluAction } from "../types";
+import { registerConfirmation } from "../ws/ui-handler";
+import { matchSkill, runSkill, createSkillFromVoice } from "./skill-engine";
+import { evolveFromInteraction } from "./self-evolution";
 
 export interface LoopInput {
   userInput: string;
@@ -22,13 +25,25 @@ export interface LoopInput {
  *
  * Pipeline now handles cloud tools (search, memory_read, see) internally
  * so the writer gets real data. This loop handles:
+ *   - Direct matching against skills (bypasses LLM pipeline for performance)
  *   - Delivering the response (text + audio) to UI
  *   - Executing desktop action steps (hands, browser, calendar, etc.)
  *   - Saving the interaction to memory
+ *   - Firing the self-evolution engine to learn preference or skills
  */
 export async function runAgenticLoop(input: LoopInput): Promise<void> {
   const { userInput, contextSummary, userState, sessionId } = input;
   const loopStart = Date.now();
+
+  // 1. Check if input matches a skill trigger first (fast path — bypasses LLM)
+  const matchedSkill = matchSkill(userInput);
+  if (matchedSkill) {
+    console.log(`[Loop] Skill match: "${matchedSkill.skill}"`);
+    const result = await runSkill(matchedSkill.skill);
+    void evolveFromInteraction(userInput, `Executed skill: ${matchedSkill.skill}`, sessionId);
+    console.log(`[Loop] Skill done: ${result.success} in ${result.latency_ms}ms`);
+    return;
+  }
 
   emitToUI({ type: "thought", step: "Thinking...", icon: "brain" });
 
@@ -59,6 +74,11 @@ export async function runAgenticLoop(input: LoopInput): Promise<void> {
     sessionId
   );
 
+  // Trigger self-evolution (fire-and-forget)
+  if (output.response?.text) {
+    void evolveFromInteraction(userInput, output.response.text, sessionId);
+  }
+
   console.log(`[Loop] Total: ${Date.now() - loopStart}ms`);
 }
 
@@ -87,6 +107,11 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
 
   // Confirmation gate
   if (action.requires_confirmation) {
+    console.log(`[Loop] Action ${action.id} requires user confirmation. Pausing...`);
+    registerConfirmation(action.id, () => {
+      console.log(`[Loop] Action ${action.id} approved! Resuming execution...`);
+      void runActionSteps(action, sessionId, actionStart);
+    });
     emitToUI({
       type: "action_confirm",
       action_id: action.id,
@@ -96,6 +121,13 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
     return; // ui-handler resumes execution on confirm
   }
 
+  await runActionSteps(action, sessionId, actionStart);
+}
+
+/**
+ * Executes the queued action steps sequentially
+ */
+async function runActionSteps(action: TilluAction, sessionId: string, actionStart: number): Promise<void> {
   let allSucceeded = true;
   const toolResults: string[] = [];
 
@@ -129,7 +161,7 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
 
 // ─── Step executor — all tool types ──────────────────────────────────────────
 
-async function executeStep(step: ActionStep): Promise<{
+export async function executeStep(step: ActionStep): Promise<{
   success: boolean; output: unknown; summary?: string; error?: string;
 }> {
   try {
@@ -227,11 +259,16 @@ async function executeStep(step: ActionStep): Promise<{
       // ── Create skill ──────────────────────────────────────────────────────
       case "create_skill": {
         emitToUI({ type: "thought", step: "Creating skill...", icon: "brain" });
-        // Save skill definition to memory for now
-        // Full YAML creation handled by skill engine (future)
-        const skillContent = `New skill: ${step.params.name as string} — trigger: "${step.params.trigger as string}" — steps: ${JSON.stringify(step.params.steps).slice(0, 200)}`;
-        await writeMemory(skillContent, "fact", "high");
-        return { success: true, output: { created: step.params.name }, summary: `Skill "${step.params.name as string}" created` };
+        const ok = await createSkillFromVoice(
+          step.params.name as string,
+          step.params.trigger as string,
+          (step.params.steps as Array<{ action: string; params?: Record<string, unknown> }> ?? []).map(s => ({
+            action: s.action,
+            params: s.params,
+          })),
+          step.params.description as string | undefined
+        );
+        return { success: ok, output: { created: step.params.name }, summary: ok ? `Skill "${step.params.name as string}" created` : "Skill creation failed" };
       }
 
       default:
