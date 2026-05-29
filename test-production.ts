@@ -177,9 +177,11 @@ async function testDreamStatus(): Promise<void> {
   try {
     const { status, body, latency } = await GET("/dream/status");
     const b = body as Record<string, unknown>;
+    const dl = b.dream_loop as Record<string, unknown> ?? b;
     if (status === 200) {
-      ok(`GET /dream/status  →  running=${b.running}  (${ms(latency)})`);
-      dim(`next_morning_prep: ${b.next_morning_prep}`);
+      ok(`GET /dream/status  →  running=${dl.running}  (${ms(latency)})`);
+      dim(`next_morning_prep: ${dl.next_morning_prep}`);
+      dim(`last_world_monitor: ${dl.last_world_monitor ?? "never"}`);
     } else {
       fail(`GET /dream/status  →  status=${status}`);
     }
