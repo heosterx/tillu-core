@@ -1,12 +1,17 @@
 import type WebSocket from "ws";
 import type { InboundMessage } from "../types";
 import { markConnected, markDisconnected } from "../engines/presence";
-import { setHandsConnection, resolveAction } from "../tools/hands.tool";
+import { setHandsConnection, resolveAction, flushQueue } from "../tools/hands.tool";
+import { setupHeartbeat } from "./heartbeat";
 
 export function handleHandsConnection(ws: WebSocket): void {
   console.log("[Hands] Connected");
   markConnected("hands");
   setHandsConnection(ws);
+  setupHeartbeat(ws, "Hands");
+  
+  // Flush any offline actions queued while disconnected
+  flushQueue();
 
   ws.on("message", (raw) => {
     try {

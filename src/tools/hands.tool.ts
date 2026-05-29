@@ -10,6 +10,14 @@ const pendingActions = new Map<string, {
   timeout: ReturnType<typeof setTimeout>;
 }>();
 
+interface QueuedAction {
+  id: string;
+  action: string;
+  params: Record<string, unknown>;
+  timestamp: number;
+}
+const offlineQueue: QueuedAction[] = [];
+
 export function setHandsConnection(ws: WebSocket | null): void {
   handsWs = ws;
 }
@@ -26,11 +34,13 @@ export async function executeAction(
   action: string,
   params: Record<string, unknown>
 ): Promise<{ success: boolean; output: unknown; error?: string }> {
-  if (!isHandsConnected()) {
-    return { success: false, output: null, error: "Tillu-Hands is not connected" };
-  }
-
   const id = uuidv4();
+
+  if (!isHandsConnected()) {
+    offlineQueue.push({ id, action, params, timestamp: Date.now() });
+    console.log(`[Hands] Offline. Queued action: ${action}`);
+    return { success: true, output: "Action queued because Hands is offline. It will execute upon reconnection." };
+  }
 
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
@@ -74,4 +84,15 @@ export function resolveAction(
   } else {
     pending.reject(new Error(error ?? "Action failed"));
   }
+}
+
+export function flushQueue(): void {
+  if (!isHandsConnected() || offlineQueue.length === 0) return;
+  
+  console.log(`[Hands] Flushing ${offlineQueue.length} queued actions`);
+  for (const q of offlineQueue) {
+    const msg: OutboundHandsMessage = { type: "action", id: q.id, action: q.action, params: q.params };
+    handsWs!.send(JSON.stringify(msg));
+  }
+  offlineQueue.length = 0;
 }

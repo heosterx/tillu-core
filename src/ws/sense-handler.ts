@@ -2,6 +2,7 @@ import type WebSocket from "ws";
 import type { InboundMessage, SenseContext } from "../types";
 import { markConnected, markDisconnected } from "../engines/presence";
 import { runProactiveTick } from "../engines/proactive";
+import { setupHeartbeat } from "./heartbeat";
 
 // Latest context from Sense — read by agentic loop before decisions
 let latestContext: SenseContext | null = null;
@@ -33,6 +34,7 @@ export function getContextSummary(): string {
 export function handleSenseConnection(ws: WebSocket): void {
   console.log("[Sense] Connected");
   markConnected("sense");
+  setupHeartbeat(ws, "Sense");
 
   ws.on("message", (raw) => {
     try {

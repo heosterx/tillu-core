@@ -5,6 +5,7 @@ import { runAgenticLoop } from "../engines/agentic-loop";
 import { getContextSummary, getLatestContext, getLatestScreenshot } from "./sense-handler";
 import { loadContext } from "../tools/memory.tool";
 import { HEOSTER } from "../types";
+import { setupHeartbeat } from "./heartbeat";
 
 // Pending confirmations waiting for UI approval
 const pendingConfirmations = new Map<string, () => void>();
@@ -17,6 +18,7 @@ export function handleUIConnection(ws: WebSocket): void {
   console.log("[UI] Connected");
   markConnected("ui");
   setUISocket(ws);
+  setupHeartbeat(ws, "UI");
 
   ws.on("message", async (raw) => {
     try {
