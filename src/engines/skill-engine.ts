@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { Skill, SkillStep } from "../types";
 import { emitToUI } from "./presence";
 import { search, formatSearchResult } from "../tools/search.tool";
+import { getNews, getWeather, formatNews, formatWeather } from "../tools/news-weather.tool";
 import { searchMemory, writeMemory, recordSkillFeedback } from "../tools/memory.tool";
 import { speak } from "../tools/voice.tool";
 
@@ -160,6 +161,17 @@ async function executeSkillStep(step: SkillStep, vars: Record<string, unknown>):
   const action = step.action;
 
   switch (action) {
+    case "news": {
+      const result = await getNews(params.query as string ?? "India top headlines");
+      return { summary: formatNews(result), articles: result.articles };
+    }
+
+    case "weather": {
+      const city = params.city as string ?? "Muzaffarnagar";
+      const result = await getWeather(city);
+      return { ...result, summary: formatWeather(result) };
+    }
+
     case "search": {
       const result = await search(params.query as string ?? "", "fast", "general");
       return { summary: formatSearchResult(result), ...result };

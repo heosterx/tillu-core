@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { runPipeline } from "../brain/pipeline";
 import { executeAction, isHandsConnected } from "../tools/hands.tool";
 import { search, formatSearchResult } from "../tools/search.tool";
+import { getNews, getWeather, formatNews, formatWeather } from "../tools/news-weather.tool";
 import { see } from "../tools/see.tool";
 import { speak } from "../tools/voice.tool";
 import { writeMemory, searchMemory, logAction } from "../tools/memory.tool";
@@ -166,6 +167,21 @@ export async function executeStep(step: ActionStep): Promise<{
 }> {
   try {
     switch (step.tool) {
+
+      // ── Cloud: News ───────────────────────────────────────────────────────
+      case "news": {
+        emitToUI({ type: "thought", step: `Getting news: ${step.params.query as string ?? "..."}`, icon: "search" });
+        const result = await getNews(step.params.query as string ?? "India top headlines");
+        return { success: true, output: result, summary: formatNews(result) };
+      }
+
+      // ── Cloud: Weather ────────────────────────────────────────────────────
+      case "weather": {
+        const city = step.params.city as string ?? "Muzaffarnagar";
+        emitToUI({ type: "thought", step: `Getting weather for ${city}...`, icon: "search" });
+        const result = await getWeather(city);
+        return { success: true, output: result, summary: formatWeather(result) };
+      }
 
       // ── Cloud: Search ──────────────────────────────────────────────────────
       case "search": {

@@ -6,6 +6,34 @@ export const TOOL_SCHEMA: Groq.Chat.CompletionCreateParams.Tool[] = [
   {
     type: "function",
     function: {
+      name: "news",
+      description: "Get latest news headlines on any topic. Use for: 'what's in the news', 'latest cricket news', 'India news today', 'tech news'",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "News topic or keyword, e.g. 'India cricket', 'AI technology', 'board exams 2026'" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "weather",
+      description: "Get current weather for any city. Heoster's default city is Muzaffarnagar. Use for: 'weather today', 'mausam', 'temperature', 'will it rain'",
+      parameters: {
+        type: "object",
+        properties: {
+          city: { type: "string", description: "City name, e.g. 'Muzaffarnagar', 'Delhi', 'Mumbai'. Defaults to Muzaffarnagar if not specified." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search",
       description: "Search the web for real-time information: news, prices, weather, facts, videos",
       parameters: {

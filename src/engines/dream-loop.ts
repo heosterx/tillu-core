@@ -1,5 +1,6 @@
 import cron from "node-cron";
 import { search } from "../tools/search.tool";
+import { getNews, getWeather } from "../tools/news-weather.tool";
 import {
   consolidateSession,
   storeBriefing,
@@ -57,15 +58,16 @@ async function runMorningPrep(): Promise<void> {
   console.log("[DreamLoop] Running morning briefing prep...");
 
   try {
-    // Fetch news, weather, birthdays in parallel
+    // Fetch news, weather, birthdays in parallel — use dedicated news/weather service
     const [newsResult, weatherResult, birthdays] = await Promise.all([
-      search("world news today India", "fast", "news"),
-      search(`weather today Muzaffarnagar Uttar Pradesh`, "fast"),
+      getNews("world news today India"),
+      getWeather("Muzaffarnagar"),
       getUpcomingBirthdays(7),
     ]);
 
-    const newsHeadlines = newsResult.key_points.slice(0, 3).join(". ");
-    const weather = weatherResult.answer.slice(0, 150);
+    const newsHeadlines = newsResult.articles.slice(0, 3).map(a => a.title).join(". ") ||
+                          newsResult.summary.slice(0, 300);
+    const weather = weatherResult.summary;
     const birthdayStr = (birthdays as Array<{ person_name: string; days_until: number }>)
       .map((b) => `${b.person_name} in ${b.days_until} days`)
       .join(", ");
@@ -116,12 +118,11 @@ async function runMemoryConsolidation(): Promise<void> {
 async function runWorldMonitor(): Promise<void> {
   console.log("[DreamLoop] Running world monitor...");
   try {
-    // Get tracked topics from memory
     const topicMemories = await searchMemory("tracked topics interests", 3) as Array<{ content: string }>;
     const topics = topicMemories.map((m) => m.content).join(", ") || "India news, technology, cricket";
 
-    // Search for updates on tracked topics
-    await search(`latest news ${topics}`, "fast", "news");
+    // Use dedicated news service for tracked topics
+    await getNews(topics);
 
     const ts = nowISO();
     await updateDreamState({ last_world_monitor: ts });

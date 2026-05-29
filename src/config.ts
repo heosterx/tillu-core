@@ -41,10 +41,11 @@ export const config = {
     elevenlabsKey:  opt("ELEVENLABS_API_KEY", ""),
   },
   services: {
-    memoryUrl:  opt("TILLU_MEMORY_URL",  "https://tillu-memory.vercel.app"),
-    searchUrl:  opt("TILLU_SEARCH_URL",  "https://tillu-smart-search.vercel.app"),
-    voiceUrl:   opt("TILLU_VOICE_URL",   "https://tillu-voice.vercel.app"),
-    seeUrl:     opt("TILLU_SEE_URL",     "https://tillu-see.vercel.app"),
+    memoryUrl:     opt("TILLU_MEMORY_URL",       "https://tillu-memory.vercel.app"),
+    searchUrl:     opt("TILLU_SEARCH_URL",        "https://tillu-smart-search.vercel.app"),
+    voiceUrl:      opt("TILLU_VOICE_URL",         "https://tillu-voice.vercel.app"),
+    seeUrl:        opt("TILLU_SEE_URL",           "https://tillu-see.vercel.app"),
+    newsWeatherUrl: opt("TILLU_NEWS_WEATHER_URL", "https://tillu-news-weather.vercel.app"),
   },
   heoster: {
     userId:   "heoster",

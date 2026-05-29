@@ -3,6 +3,7 @@ import { classify } from "./classifier";
 import { plan } from "./planner";
 import { write } from "./writer";
 import { search, formatSearchResult } from "../tools/search.tool";
+import { getNews, getWeather, formatNews, formatWeather } from "../tools/news-weather.tool";
 import { searchMemory } from "../tools/memory.tool";
 import { see } from "../tools/see.tool";
 import type {
@@ -40,6 +41,19 @@ export interface PipelineResult {
  * contain real data. Desktop tools (hands, browser, calendar) are queued as
  * ActionSteps and executed by the agentic-loop in parallel with voice.
  */
+async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let lastError: Error | undefined;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e as Error;
+      await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+    }
+  }
+  throw lastError;
+}
+
 export async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
   const start = Date.now();
   const { userInput, contextSummary, userState, image, latestScreenshot } = input;
@@ -83,30 +97,51 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   for (const tc of planResult.tool_calls) {
     const toolName = tc.tool;
 
-    if (toolName === "search") {
+    if (toolName === "news") {
+      // Execute news fetch NOW — writer needs the headlines
+      try {
+        const result = await getNews(tc.params.query as string ?? "India top headlines");
+        const formatted = formatNews(result);
+        if (formatted) cloudResults.push(formatted);
+      } catch (e) {
+        console.warn("[Pipeline] News failed:", (e as Error).message);
+      }
+
+    } else if (toolName === "weather") {
+      // Execute weather fetch NOW — writer needs current conditions
+      try {
+        const city = tc.params.city as string ?? "Muzaffarnagar";
+        const result = await getWeather(city);
+        const formatted = formatWeather(result);
+        if (formatted) cloudResults.push(formatted);
+      } catch (e) {
+        console.warn("[Pipeline] Weather failed:", (e as Error).message);
+      }
+
+    } else if (toolName === "search") {
       // Execute search NOW — writer needs the results
       try {
-        const result = await search(
+        const result = await withRetry(() => search(
           tc.params.query as string,
           (tc.params.mode as "fast" | "full") ?? "fast",
           (tc.params.category as "general" | "news" | "videos") ?? "general"
-        );
+        ));
         const formatted = formatSearchResult(result);
         if (formatted) cloudResults.push(`[Search: ${tc.params.query}]\n${formatted}`);
       } catch (e) {
-        console.warn("[Pipeline] Search failed:", (e as Error).message);
+        console.warn("[Pipeline] Search failed after retries:", (e as Error).message);
       }
 
     } else if (toolName === "memory_read") {
       // Execute memory search NOW — writer needs context
       try {
-        const memories = await searchMemory(tc.params.query as string, 5) as Array<{ content: string }>;
+        const memories = await withRetry(() => searchMemory(tc.params.query as string, 5)) as Array<{ content: string }>;
         if (memories.length > 0) {
           const memText = memories.map(m => m.content).join("; ");
           cloudResults.push(`[Memory: ${tc.params.query}]\n${memText}`);
         }
       } catch (e) {
-        console.warn("[Pipeline] Memory read failed:", (e as Error).message);
+        console.warn("[Pipeline] Memory read failed after retries:", (e as Error).message);
       }
 
     } else if (toolName === "see") {
@@ -114,14 +149,14 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
       const imgData = image ?? latestScreenshot ?? "";
       if (imgData) {
         try {
-          const result = await see(
+          const result = await withRetry(() => see(
             (tc.params.task as "screen_read" | "ocr" | "describe" | "visual_qa") ?? "describe",
             imgData,
             tc.params.question as string | undefined
-          );
+          ));
           if (result.description) cloudResults.push(`[Vision]\n${result.description}`);
         } catch (e) {
-          console.warn("[Pipeline] See failed:", (e as Error).message);
+          console.warn("[Pipeline] See failed after retries:", (e as Error).message);
         }
       }
 

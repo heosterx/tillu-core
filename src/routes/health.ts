@@ -48,10 +48,11 @@ export async function healthHandler(_req: Request, res: Response): Promise<void>
       },
     },
     services: {
-      memory: config.services.memoryUrl,
-      search: config.services.searchUrl,
-      voice:  config.services.voiceUrl,
-      see:    config.services.seeUrl,
+      memory:      config.services.memoryUrl,
+      search:      config.services.searchUrl,
+      voice:       config.services.voiceUrl,
+      see:         config.services.seeUrl,
+      newsWeather: config.services.newsWeatherUrl,
     },
     env_vars: {
       CEREBRAS_MODEL:    config.llm.cerebrasModel,

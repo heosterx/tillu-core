@@ -82,7 +82,7 @@ export type ActionStatus = "pending" | "running" | "done" | "failed" | "cancelle
 
 export interface ActionStep {
   id: string;
-  tool: "hands" | "browser" | "search" | "see" | "memory" | "calendar" | "voice" | "create_skill";
+  tool: "hands" | "browser" | "search" | "see" | "memory" | "calendar" | "voice" | "create_skill" | "news" | "weather";
   action: string;
   params: Record<string, unknown>;
   status: ActionStepStatus;
