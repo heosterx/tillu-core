@@ -154,6 +154,16 @@ export interface DreamLoopState {
   morning_briefing_delivered_today: boolean;
 }
 
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+export interface CalendarEvent {
+  title: string;
+  date: string;       // YYYY-MM-DD
+  time?: string;      // HH:MM
+  category: "school" | "exam" | "birthday" | "holiday" | "personal";
+  notes?: string;
+}
+
 // ─── Skills ───────────────────────────────────────────────────────────────────
 
 export interface SkillTrigger {

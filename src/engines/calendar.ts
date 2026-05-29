@@ -1,12 +1,5 @@
 import { writeMemory, searchMemory } from "../tools/memory.tool";
-
-export interface CalendarEvent {
-  title: string;
-  date: string; // YYYY-MM-DD
-  time?: string; // HH:MM
-  category: "school" | "exam" | "birthday" | "holiday" | "personal";
-  notes?: string;
-}
+import type { CalendarEvent } from "../types";
 
 // Built-in defaults for Class 12 Maples Academy, Khatauli
 const STATIC_SCHEDULE = [

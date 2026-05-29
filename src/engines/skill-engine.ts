@@ -15,6 +15,8 @@ import type { Skill, SkillStep } from "../types";
 import { emitToUI } from "./presence";
 import { search, formatSearchResult } from "../tools/search.tool";
 import { getNews, getWeather, formatNews, formatWeather } from "../tools/news-weather.tool";
+import { getUpcomingEvents, addEvent, getSchoolSchedule } from "./calendar";
+import type { CalendarEvent } from "../types";
 import { searchMemory, writeMemory, recordSkillFeedback } from "../tools/memory.tool";
 import { speak } from "../tools/voice.tool";
 
@@ -203,14 +205,30 @@ async function executeSkillStep(step: SkillStep, vars: Record<string, unknown>):
       const calAction = params.action as string ?? "read";
       if (calAction === "read") {
         const filter = params.filter as string ?? "today";
-        const memories = await searchMemory(`calendar events ${filter}`, 5) as Array<{ content: string }>;
-        const summary = memories.length > 0 ? memories.map(m => m.content).join("; ") : `No ${filter} events`;
-        return { summary, items: memories };
+        if (filter === "exams") {
+          const events = await getUpcomingEvents(365);
+          const exams = events.filter(e => e.title.toLowerCase().includes("exam") || e.title.toLowerCase().includes("board"));
+          const summary = exams.length > 0
+            ? exams.map(e => `${e.title}: ${e.days_remaining} days`).join("; ")
+            : "No upcoming exams";
+          return { summary, items: exams };
+        }
+        const today = new Date().toLocaleDateString("en-US", { weekday: "long" });
+        const schedule = getSchoolSchedule(today);
+        const events = await getUpcomingEvents(filter === "week" ? 7 : 1);
+        const summary = `${today}: ${schedule}. Upcoming: ${events.map(e => e.title).join(", ") || "none"}`;
+        return { summary, schedule, events };
       } else if (calAction === "add") {
-        const event = params.event as Record<string, unknown> ?? {};
-        const content = `Calendar event: ${event.title ?? "Untitled"} on ${event.date ?? "unknown"}`;
-        await writeMemory(content, "event", "high");
-        return { saved: true };
+        const raw = params.event as Record<string, unknown> ?? {};
+        const event: CalendarEvent = {
+          title:    String(raw.title ?? "Untitled"),
+          date:     String(raw.date ?? new Date().toISOString().split("T")[0]),
+          time:     raw.time ? String(raw.time) : undefined,
+          category: (raw.category as CalendarEvent["category"]) ?? "personal",
+          notes:    raw.notes ? String(raw.notes) : undefined,
+        };
+        await addEvent(event);
+        return { saved: true, summary: `Added: ${event.title}` };
       }
       return null;
     }
