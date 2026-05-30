@@ -3,17 +3,16 @@ import { config } from "../../config";
 const BASE_URL = "https://api.cerebras.ai/v1";
 
 /**
- * Cerebras free models (as of 2025):
- *   GLM-4-9B  — free via OSSZ.ai on Cerebras, fast inference
- *
- * Paid models (not available on free tier):
- *   llama-3.3-70b, llama-4-scout-17b-16e-instruct, llama3.1-8b
+ * Cerebras free models (as of 2026):
+ *   zai-glm-4.7  — free, fast inference (~200ms)
+ *   gpt-oss-120b — free, larger model
  */
 export const CEREBRAS_MODELS = [
-  "GLM-4-9B",
+  "zai-glm-4.7",
+  "gpt-oss-120b",
 ] as const;
 
-export const CEREBRAS_DEFAULT_MODEL = "GLM-4-9B";
+export const CEREBRAS_DEFAULT_MODEL = "gpt-oss-120b";
 
 export type CerebrasModel = typeof CEREBRAS_MODELS[number];
 
@@ -73,10 +72,13 @@ export async function callCerebras(
   }
 
   const data = await res.json() as {
-    choices: Array<{ message: { content: string } }>;
+    choices: Array<{ message: { content?: string; reasoning?: string } }>;
   };
 
-  const text = data.choices?.[0]?.message?.content;
+  // Both zai-glm-4.7 and gpt-oss-120b are reasoning models —
+  // they put output in message.reasoning when content is empty
+  const choice = data.choices?.[0]?.message;
+  const text = choice?.content || choice?.reasoning;
   if (!text) throw new Error("Cerebras returned empty response");
   return text;
 }
@@ -119,8 +121,9 @@ export async function verifyCerebras(): Promise<{
       return { ok: false, model, latency_ms: Date.now() - start, error: `${res.status}: ${err.slice(0, 100)}` };
     }
 
-    const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-    const reply = data.choices?.[0]?.message?.content ?? "";
+    const data = await res.json() as { choices: Array<{ message: { content?: string; reasoning?: string } }> };
+    const choice = data.choices?.[0]?.message;
+    const reply = choice?.content || choice?.reasoning || "";
     return { ok: !!reply, model, latency_ms: Date.now() - start };
   } catch (e) {
     return { ok: false, model, latency_ms: Date.now() - start, error: (e as Error).message.slice(0, 80) };

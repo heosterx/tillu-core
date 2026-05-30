@@ -137,7 +137,24 @@ export type OutboundUIMessage =
   | { type: "action_confirm"; action_id: string; message: string; pending_step: ActionStep }
   | { type: "proactive"; message: string; recipe?: string }
   | { type: "error"; message: string; recoverable: boolean }
-  | { type: "mode_change"; mode: PresenceMode };
+  | { type: "mode_change"; mode: PresenceMode }
+  | {
+      type: "status_update";
+      connections: {
+        sense: boolean;
+        hands: boolean;
+        ui: boolean;
+      };
+      services: {
+        memory: boolean;
+        search: boolean;
+        voice: boolean;
+        see: boolean;
+        newsWeather: boolean;
+      };
+      active_model?: string;
+      memory_ctx_size?: number;
+    };
 
 // Outbound (to Hands)
 export type OutboundHandsMessage =

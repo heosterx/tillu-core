@@ -77,11 +77,11 @@ async function pingService(url: string, path: string): Promise<ServiceHealth> {
 
 async function checkServices(): Promise<void> {
   const [mem, srch, voice, see, news] = await Promise.allSettled([
-    pingService(config.services.memoryUrl,      "/health"),
-    pingService(config.services.searchUrl,       "/health"),
-    pingService(config.services.voiceUrl,        "/health"),
-    pingService(config.services.seeUrl,          "/health"),
-    pingService(config.services.newsWeatherUrl,  "/health"),
+    pingService(config.services.memoryUrl,      "/api/health"),
+    pingService(config.services.searchUrl,       "/api/unified?q=ping&mode=fast"),
+    pingService(config.services.voiceUrl,        "/api/health"),
+    pingService(config.services.seeUrl,          "/api/see/health"),
+    pingService(config.services.newsWeatherUrl,  "/api/health"),
   ]);
 
   const fallback: ServiceHealth = { ok: false, latency_ms: 0, last_checked: new Date().toISOString(), error: "check failed" };

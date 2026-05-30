@@ -60,6 +60,9 @@ export function markConnected(type: "sense" | "hands" | "ui"): void {
     state.mode = "online";
     emitToUI({ type: "mode_change", mode: "online" });
   }
+
+  // Push immediate status update
+  broadcastStatusUpdate();
 }
 
 export function markDisconnected(type: "sense" | "hands" | "ui"): void {
@@ -74,6 +77,9 @@ export function markDisconnected(type: "sense" | "hands" | "ui"): void {
     state.ui_connected = false;
     uiSocket = null;
   }
+
+  // Push immediate status update
+  broadcastStatusUpdate();
 }
 
 // ─── Wake-Up Sequence ─────────────────────────────────────────────────────────
@@ -138,3 +144,40 @@ export function emitToUI(msg: OutboundUIMessage): void {
     uiSocket.send(JSON.stringify(msg));
   }
 }
+
+// ─── Real-time Status Broadcasting ───────────────────────────────────────────
+
+export function broadcastStatusUpdate(): void {
+  try {
+    const { getAliveState } = require("./tillu-alive");
+    const alive = getAliveState();
+    const { config } = require("../config");
+
+    emitToUI({
+      type: "status_update",
+      connections: {
+        sense: state.sense_connected,
+        hands: state.hands_connected,
+        ui: state.ui_connected,
+      },
+      services: {
+        memory: alive.services.memory.ok,
+        search: alive.services.search.ok,
+        voice: alive.services.voice.ok,
+        see: alive.services.see.ok,
+        newsWeather: alive.services.newsWeather.ok,
+      },
+      active_model: config.llm.groqModel.split("-").slice(0, 3).join("-"),
+      memory_ctx_size: 4096, // placeholder or dynamically derived
+    });
+  } catch (e) {
+    // Avoid spamming logs if services aren't fully initialized yet
+  }
+}
+
+// Start periodic status broadcast every 5 seconds
+setInterval(() => {
+  if (uiSocket && uiSocket.readyState === 1) {
+    broadcastStatusUpdate();
+  }
+}, 5000);
