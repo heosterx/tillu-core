@@ -1,5 +1,4 @@
 import cron from "node-cron";
-import { search } from "../tools/search.tool";
 import { getNews, getWeather } from "../tools/news-weather.tool";
 import {
   consolidateSession,
@@ -7,11 +6,12 @@ import {
   updateDreamState,
   getUpcomingBirthdays,
   searchMemory,
+  writeMemory,
 } from "../tools/memory.tool";
+import { getUpcomingEvents } from "./calendar";
 import { writeMorningBriefing } from "../brain/writer";
-import { getISTHour, nowISO } from "../utils/time";
+import { nowISO } from "../utils/time";
 import { isOnline } from "./presence";
-import { HEOSTER } from "../types";
 
 let isRunning = false;
 
@@ -40,6 +40,11 @@ export function startDreamLoop(): void {
   // World monitoring — every 2 hours when offline
   cron.schedule("0 */2 * * *", () => {
     if (!isOnline()) void runWorldMonitor();
+  });
+
+  // Calendar check — every 2 hours always (online or offline)
+  cron.schedule("30 */2 * * *", () => {
+    void runCalendarCheck();
   });
 
   // Weekly skill review — Sunday 10 PM IST
@@ -72,11 +77,21 @@ async function runMorningPrep(): Promise<void> {
       .map((b) => `${b.person_name} in ${b.days_until} days`)
       .join(", ");
 
+    // RAG enrichment — pull recent context and preferences
+    let ragContext = "";
+    try {
+      const { memoryRag } = await import("../rag/pipelines/memory-rag");
+      const ragResult = await memoryRag("morning briefing recent events preferences", `dream_${Date.now()}`);
+      if (ragResult.context) ragContext = `\nRecent context:\n${ragResult.context}`;
+    } catch (e) {
+      console.warn("[DreamLoop] RAG enrichment failed:", (e as Error).message);
+    }
+
     // Write briefing using LLM
     const briefingContent = await writeMorningBriefing({
       newsHeadlines,
       weather,
-      todayEvents: "", // Calendar engine will provide this
+      todayEvents: ragContext, // RAG context enriches the briefing
       upcomingBirthdays: birthdayStr,
     });
 
@@ -118,8 +133,21 @@ async function runMemoryConsolidation(): Promise<void> {
 async function runWorldMonitor(): Promise<void> {
   console.log("[DreamLoop] Running world monitor...");
   try {
-    const topicMemories = await searchMemory("tracked topics interests", 3) as Array<{ content: string }>;
-    const topics = topicMemories.map((m) => m.content).join(", ") || "India news, technology, cricket";
+    // RAG-enhanced topic discovery
+    let topics = "India news, technology, cricket";
+    try {
+      const { memoryRag } = await import("../rag/pipelines/memory-rag");
+      const ragResult = await memoryRag("tracked topics interests hobbies", `dream_monitor_${Date.now()}`);
+      if (ragResult.context) {
+        topics = ragResult.context.slice(0, 300);
+      } else {
+        const topicMemories = await searchMemory("tracked topics interests", 3) as Array<{ content: string }>;
+        topics = topicMemories.map((m) => m.content).join(", ") || topics;
+      }
+    } catch {
+      const topicMemories = await searchMemory("tracked topics interests", 3) as Array<{ content: string }>;
+      topics = topicMemories.map((m) => m.content).join(", ") || topics;
+    }
 
     // Use dedicated news service for tracked topics
     await getNews(topics);
@@ -130,6 +158,23 @@ async function runWorldMonitor(): Promise<void> {
     console.log("[DreamLoop] World monitor complete");
   } catch (e) {
     console.error("[DreamLoop] World monitor failed:", (e as Error).message);
+  }
+}
+
+async function runCalendarCheck(): Promise<void> {
+  console.log("[DreamLoop] Running calendar check...");
+  try {
+    const events = await getUpcomingEvents(7);
+    if (events.length > 0) {
+      const summary = events
+        .map(e => `${e.title} in ${e.days_remaining} day${e.days_remaining === 1 ? "" : "s"}`)
+        .join(", ");
+      console.log(`[DreamLoop] Upcoming events: ${summary}`);
+      // Store as a memory so RAG can retrieve it for proactive messages
+      await writeMemory(`Upcoming events: ${summary}`, "event", "high");
+    }
+  } catch (e) {
+    console.error("[DreamLoop] Calendar check failed:", (e as Error).message);
   }
 }
 

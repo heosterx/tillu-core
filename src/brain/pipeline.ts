@@ -144,6 +144,23 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
         console.warn("[Pipeline] Memory read failed after retries:", (e as Error).message);
       }
 
+    } else if (toolName === "rag") {
+      // RAG retrieval — routes to appropriate pipeline
+      try {
+        const { routeRag } = await import("../rag/rag-router");
+        const ragResult = await routeRag({
+          query: tc.params.query as string,
+          intent: classification.intent,
+          sessionId: tc.params.sessionId as string ?? "default",
+          searchResults: cloudResults.join("\n"),
+        });
+        if (ragResult.context) {
+          cloudResults.push(`[RAG: ${ragResult.pipeline}]\n${ragResult.context}`);
+        }
+      } catch (e) {
+        console.warn("[Pipeline] RAG failed:", (e as Error).message);
+      }
+
     } else if (toolName === "see") {
       // Execute vision NOW if image is available
       const imgData = image ?? latestScreenshot ?? "";

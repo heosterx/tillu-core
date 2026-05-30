@@ -141,6 +141,21 @@ export const TOOL_SCHEMA: Groq.Chat.CompletionCreateParams.Tool[] = [
   {
     type: "function",
     function: {
+      name: "rag",
+      description: "Retrieve relevant context from Heoster's knowledge base and memory using semantic search. Use for: questions about past conversations, document Q&A, finding relevant context",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What to retrieve context about" },
+          sessionId: { type: "string", description: "Current session ID" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_skill",
       description: "Create a new custom skill from Heoster's voice instruction. Use when Heoster says 'whenever I say X, do Y'",
       parameters: {

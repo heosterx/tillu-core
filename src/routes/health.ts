@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { getPresenceState } from "../engines/presence";
 import { getDreamLoopStatus } from "../engines/dream-loop";
+import { getAliveState } from "../engines/tillu-alive";
 import { isHandsConnected } from "../tools/hands.tool";
 import { verifyCerebras } from "../brain/providers/cerebras";
 import { getHealthStatus } from "../brain/providers/router";
@@ -29,6 +30,7 @@ export async function healthHandler(_req: Request, res: Response): Promise<void>
       hands_ready: isHandsConnected(),
     },
     dream_loop: dream,
+    alive: getAliveState(),
     providers: {
       router_health: getHealthStatus(),
       cerebras: {

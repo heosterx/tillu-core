@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 import { config } from "./config";
 import { startDreamLoop } from "./engines/dream-loop";
+import { startTilluAlive } from "./engines/tillu-alive";
 import { loadSkills } from "./engines/skill-engine";
 import { handleSenseConnection } from "./ws/sense-handler";
 import { handleHandsConnection } from "./ws/hands-handler";
@@ -91,7 +92,11 @@ server.listen(PORT, () => {
 
   // Start Dream Loop scheduler
   startDreamLoop();
-  console.log("💤 Dream Loop started — Tillu is always thinking\n");
+  console.log("💤 Dream Loop started — Tillu is always thinking");
+
+  // Start Tillu Alive heartbeat engine
+  startTilluAlive();
+  console.log("💓 Tillu Alive — 60s heartbeat running\n");
 });
 
 // Graceful shutdown
