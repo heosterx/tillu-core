@@ -19,6 +19,8 @@ import { getUpcomingEvents, addEvent, getSchoolSchedule } from "./calendar";
 import type { CalendarEvent } from "../types";
 import { searchMemory, writeMemory, recordSkillFeedback } from "../tools/memory.tool";
 import { speak } from "../tools/voice.tool";
+import { executeAction, isHandsConnected } from "../tools/hands.tool";
+import { flowObserver } from "./flow-observer";
 
 // ─── Skill registry ───────────────────────────────────────────────────────────
 
@@ -116,7 +118,9 @@ export interface SkillRunResult {
 export async function runSkill(skillName: string): Promise<SkillRunResult> {
   const skill = skills.get(skillName);
   if (!skill) {
-    return { success: false, steps_completed: 0, steps_total: 0, latency_ms: 0, error: `Skill not found: ${skillName}` };
+    const result = { success: false, steps_completed: 0, steps_total: 0, latency_ms: 0, error: `Skill not found: ${skillName}` };
+    flowObserver.skillCompleted(skillName, false, 0);
+    return result;
   }
 
   const executionId = uuidv4();
@@ -124,7 +128,7 @@ export async function runSkill(skillName: string): Promise<SkillRunResult> {
   const variables: Record<string, unknown> = {};
   let stepsCompleted = 0;
 
-  emitToUI({ type: "thought", step: `Running skill: ${skill.description}`, icon: "brain" });
+  flowObserver.skillStarted(skillName);
 
   for (const step of skill.steps) {
     try {
@@ -143,6 +147,7 @@ export async function runSkill(skillName: string): Promise<SkillRunResult> {
       if (onFailure === "abort") {
         const latency = Date.now() - start;
         void recordSkillFeedback(skillName, executionId, false, stepsCompleted, skill.steps.length, latency);
+        flowObserver.skillCompleted(skillName, false, latency);
         return { success: false, steps_completed: stepsCompleted, steps_total: skill.steps.length, latency_ms: latency, error: err };
       }
       // skip or retry — for now just skip
@@ -151,6 +156,7 @@ export async function runSkill(skillName: string): Promise<SkillRunResult> {
 
   const latency = Date.now() - start;
   void recordSkillFeedback(skillName, executionId, true, stepsCompleted, skill.steps.length, latency);
+  flowObserver.skillCompleted(skillName, true, latency);
 
   return { success: true, steps_completed: stepsCompleted, steps_total: skill.steps.length, latency_ms: latency };
 }
@@ -199,6 +205,20 @@ async function executeSkillStep(step: SkillStep, vars: Record<string, unknown>):
       }
       emitToUI({ type: "response_text", text });
       return { audio_url: audioUrl, text };
+    }
+
+    case "open_browser": {
+      emitToUI({ type: "open_browser" });
+      return { opened: true };
+    }
+
+    case "hands": {
+      if (!isHandsConnected()) {
+        console.warn("[SkillEngine] Hands not connected, skipping step");
+        return null;
+      }
+      const result = await executeAction(step.action, params);
+      return { ...result, summary: result.success ? "Hands action completed" : undefined };
     }
 
     case "calendar": {

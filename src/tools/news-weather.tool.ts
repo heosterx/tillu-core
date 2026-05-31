@@ -54,7 +54,7 @@ export async function getNews(query = "India top headlines"): Promise<NewsResult
     // Normalise across NewsAPI and GNews response shapes
     const rawArticles: Array<Record<string, unknown>> =
       data.data?.articles ??       // NewsAPI
-      data.data?.articles ??       // GNews
+      data.articles ??             // GNews
       [];
 
     const articles: NewsArticle[] = rawArticles.slice(0, 5).map(a => ({

@@ -12,6 +12,7 @@ import type { ActionStep, TilluOutput, TilluAction, CalendarEvent } from "../typ
 import { registerConfirmation } from "../ws/ui-handler";
 import { matchSkill, runSkill, createSkillFromVoice } from "./skill-engine";
 import { evolveFromInteraction } from "./self-evolution";
+import { flowObserver } from "./flow-observer";
 
 export interface LoopInput {
   userInput: string;
@@ -36,14 +37,21 @@ export interface LoopInput {
 export async function runAgenticLoop(input: LoopInput): Promise<void> {
   const { userInput, contextSummary, userState, sessionId } = input;
   const loopStart = Date.now();
+  let loopSuccess = true;
 
   // 1. Check if input matches a skill trigger first (fast path — bypasses LLM)
   const matchedSkill = matchSkill(userInput);
   if (matchedSkill) {
     console.log(`[Loop] Skill match: "${matchedSkill.skill}"`);
-    const result = await runSkill(matchedSkill.skill);
-    void evolveFromInteraction(userInput, `Executed skill: ${matchedSkill.skill}`, sessionId);
-    console.log(`[Loop] Skill done: ${result.success} in ${result.latency_ms}ms`);
+    try {
+      const result = await runSkill(matchedSkill.skill);
+      loopSuccess = result.success;
+      void evolveFromInteraction(userInput, `Executed skill: ${matchedSkill.skill}`, sessionId);
+      console.log(`[Loop] Skill done: ${result.success} in ${result.latency_ms}ms`);
+    } catch (e) {
+      loopSuccess = false;
+      console.error(`[Loop] Skill failed:`, (e as Error).message);
+    }
     return;
   }
 
@@ -131,9 +139,11 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
  */
 async function runActionSteps(action: TilluAction, sessionId: string, actionStart: number): Promise<void> {
   let allSucceeded = true;
+  let stepsCompleted = 0;
   const toolResults: string[] = [];
 
   for (const step of action.plan) {
+    flowObserver.actionStepStarted(step);
     emitToUI({ type: "action_step", action_id: action.id, step_id: step.id, status: "running" });
 
     const result = await executeStep(step);
@@ -143,16 +153,20 @@ async function runActionSteps(action: TilluAction, sessionId: string, actionStar
       step.output = result.output;
       if (result.summary) toolResults.push(result.summary);
       emitToUI({ type: "action_step", action_id: action.id, step_id: step.id, status: "done", output: result.output });
+      flowObserver.actionStepCompleted(step, true, result.output);
+      stepsCompleted++;
     } else {
       step.status = "failed";
       step.error = result.error;
       allSucceeded = false;
       emitToUI({ type: "action_step", action_id: action.id, step_id: step.id, status: "failed", error: result.error });
+      flowObserver.actionStepCompleted(step, false, result.output, result.error);
       break;
     }
   }
 
   emitToUI({ type: "action_done", action_id: action.id, success: allSucceeded });
+  flowObserver.actionPathCompleted(allSucceeded, stepsCompleted);
 
   void logAction(action.id, action.plan[0]?.action ?? "unknown", allSucceeded, undefined, Date.now() - actionStart);
 
@@ -248,6 +262,12 @@ export async function executeStep(step: ActionStep): Promise<{
         emitToUI({ type: "thought", step: `Browsing ${step.params.url as string ?? "..."}`, icon: "browser" });
         const result = await executeAction(step.action, step.params);
         return { success: result.success, output: result.output, error: result.error };
+      }
+
+      // ── Open Tillu Browser via UI (Custom Tool) ────────────────────────────
+      case "open_browser": {
+        emitToUI({ type: "open_browser" });
+        return { success: true, output: { opened: true } };
       }
 
       // ── Calendar (real engine — school schedule + exams + custom events) ──

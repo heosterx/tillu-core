@@ -9,11 +9,24 @@ const BASE = config.services.voiceUrl;
  */
 export async function speak(text: string, lang = "hi"): Promise<string | null> {
   try {
-    // Voice Hub returns binary audio — we need to get the URL
-    // For now, call the speak endpoint and return the URL pattern
-    // The UI will call this URL directly to play audio
-    const url = `${BASE}/api/speak?text=${encodeURIComponent(text)}&lang=${lang}`;
-    return url;
+    const { data } = await axios.post(
+      `${BASE}/api/speak`,
+      { text, lang },
+      { timeout: 30000 }
+    );
+    
+    // If the API returns an audio URL
+    if (data?.url) {
+      return data.url;
+    }
+    
+    // If the API returns base64 audio, we'll create a data URL
+    if (data?.audio) {
+      return `data:audio/wav;base64,${data.audio}`;
+    }
+    
+    // Fallback: construct the GET URL as before
+    return `${BASE}/api/speak?text=${encodeURIComponent(text)}&lang=${lang}`;
   } catch (e) {
     console.warn("[Voice] speak failed:", (e as Error).message);
     return null;

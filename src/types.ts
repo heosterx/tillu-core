@@ -82,7 +82,7 @@ export type ActionStatus = "pending" | "running" | "done" | "failed" | "cancelle
 
 export interface ActionStep {
   id: string;
-  tool: "hands" | "browser" | "search" | "see" | "memory" | "calendar" | "voice" | "create_skill" | "news" | "weather" | "rag";
+  tool: "hands" | "browser" | "search" | "see" | "memory" | "calendar" | "voice" | "create_skill" | "news" | "weather" | "rag" | "open_browser";
   action: string;
   params: Record<string, unknown>;
   status: ActionStepStatus;
@@ -138,6 +138,7 @@ export type OutboundUIMessage =
   | { type: "proactive"; message: string; recipe?: string }
   | { type: "error"; message: string; recoverable: boolean }
   | { type: "mode_change"; mode: PresenceMode }
+  | { type: "open_browser" }
   | {
       type: "status_update";
       connections: {

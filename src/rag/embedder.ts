@@ -1,10 +1,18 @@
-// ─── Embedder — HuggingFace sentence-transformers embeddings ─────────────────
+/**
+ * embedder.ts — Jina AI embeddings (same model as Tillu-memory)
+ *
+ * Model: jina-embeddings-v2-base-en → 768 dimensions
+ * Reachable from both Vercel and local environments.
+ * Free tier: 1M tokens/month
+ *
+ * LOCKED at 768 dims — must match Supabase vector(768) column.
+ */
 
 import axios from "axios";
 import { config } from "../config";
 
-const HF_EMBEDDING_URL =
-  "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2";
+const JINA_MODEL = "jina-embeddings-v2-base-en";
+const JINA_URL   = "https://api.jina.ai/v1/embeddings";
 
 // LRU-style cache: Map preserves insertion order
 const embeddingCache = new Map<string, number[]>();
@@ -13,7 +21,6 @@ const CACHE_MAX = 50;
 function cacheGet(key: string): number[] | undefined {
   const val = embeddingCache.get(key);
   if (val !== undefined) {
-    // Refresh position (LRU)
     embeddingCache.delete(key);
     embeddingCache.set(key, val);
   }
@@ -22,57 +29,39 @@ function cacheGet(key: string): number[] | undefined {
 
 function cacheSet(key: string, val: number[]): void {
   if (embeddingCache.size >= CACHE_MAX) {
-    // Evict oldest (first entry)
     const firstKey = embeddingCache.keys().next().value;
     if (firstKey !== undefined) embeddingCache.delete(firstKey);
   }
   embeddingCache.set(key, val);
 }
 
-async function hfRequest(inputs: string | string[], attempt = 1): Promise<unknown> {
-  try {
-    const { data } = await axios.post(
-      HF_EMBEDDING_URL,
-      { inputs },
-      {
-        headers: {
-          Authorization: `Bearer ${config.llm.hfKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      }
-    );
-    return data;
-  } catch (e) {
-    if (axios.isAxiosError(e) && e.response?.status === 503 && attempt < 3) {
-      const delay = Math.pow(2, attempt) * 1000;
-      console.log(`[RAG] HF model loading, retry ${attempt} in ${delay}ms`);
-      await new Promise(r => setTimeout(r, delay));
-      return hfRequest(inputs, attempt + 1);
+async function jinaRequest(inputs: string[]): Promise<number[][]> {
+  const { data } = await axios.post(
+    JINA_URL,
+    { model: JINA_MODEL, input: inputs },
+    {
+      headers: {
+        Authorization: `Bearer ${config.llm.jinaKey}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
     }
-    throw e;
-  }
+  );
+
+  // Jina returns { data: [{ embedding, index }] } — sort by index
+  const sorted = (data.data as Array<{ embedding: number[]; index: number }>)
+    .sort((a, b) => a.index - b.index);
+  return sorted.map(d => d.embedding);
 }
 
-function extractVector(raw: unknown): number[] {
-  // HF returns either number[] or number[][] (batch of 1)
-  if (Array.isArray(raw)) {
-    if (raw.length > 0 && Array.isArray(raw[0])) {
-      return raw[0] as number[];
-    }
-    return raw as number[];
-  }
-  throw new Error("[RAG] Unexpected embedding shape from HuggingFace");
-}
-
-/** Embed a single text → 384-dim vector */
+/** Embed a single text → 768-dim vector */
 export async function embedText(text: string): Promise<number[]> {
   const cached = cacheGet(text);
   if (cached) return cached;
 
   try {
-    const raw = await hfRequest(text);
-    const vec = extractVector(raw);
+    const vecs = await jinaRequest([text]);
+    const vec = vecs[0]!;
     cacheSet(text, vec);
     return vec;
   } catch (e) {
@@ -85,23 +74,12 @@ export async function embedText(text: string): Promise<number[]> {
 export async function embedBatch(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
 
-  // Check cache first
   const results: Array<number[] | null> = texts.map(t => cacheGet(t) ?? null);
-  const missing = texts.filter((_, i) => results[i] === null);
+  const missingTexts = texts.filter((_, i) => results[i] === null);
 
-  if (missing.length > 0) {
+  if (missingTexts.length > 0) {
     try {
-      const raw = await hfRequest(missing);
-      let vecs: number[][];
-
-      if (Array.isArray(raw) && raw.length > 0 && Array.isArray(raw[0])) {
-        vecs = raw as number[][];
-      } else if (Array.isArray(raw)) {
-        vecs = [raw as number[]];
-      } else {
-        throw new Error("Unexpected batch embedding shape");
-      }
-
+      const vecs = await jinaRequest(missingTexts);
       let vi = 0;
       for (let i = 0; i < texts.length; i++) {
         if (results[i] === null) {
@@ -124,7 +102,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
-    dot += (a[i] ?? 0) * (b[i] ?? 0);
+    dot   += (a[i] ?? 0) * (b[i] ?? 0);
     normA += (a[i] ?? 0) ** 2;
     normB += (b[i] ?? 0) ** 2;
   }

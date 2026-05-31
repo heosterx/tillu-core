@@ -34,6 +34,9 @@ export const config = {
     // HuggingFace — last resort
     hfKey:            opt("HF_API_KEY", ""),
     hfModel:          opt("HF_MODEL", "meta-llama/Llama-3.3-70B-Instruct"),
+
+    // Jina AI — embeddings (768-dim, Vercel-reachable)
+    jinaKey:          opt("JINA_API_KEY", ""),
   },
   voice: {
     sarvamKey:      opt("SARVAM_API_KEY", ""),

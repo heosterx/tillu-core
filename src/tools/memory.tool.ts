@@ -62,7 +62,7 @@ export async function writeMemory(
       type,
       importance,
       session_id: sessionId,
-    }, { timeout: 5000 });
+    }, { timeout: 15000 });  // 15s — Jina embed + Supabase write
   } catch (e) {
     console.warn("[Memory] writeMemory failed:", (e as Error).message);
   }
@@ -146,7 +146,7 @@ export async function storeBriefing(content: string, extras?: {
       news_summary: extras?.newsSummary,
       weather: extras?.weather,
       calendar_events: extras?.calendarEvents,
-    }, { timeout: 5000 });
+    }, { timeout: 15000 });
   } catch (e) {
     console.warn("[Memory] storeBriefing failed:", (e as Error).message);
   }
@@ -160,7 +160,7 @@ export async function updateDreamState(updates: Record<string, unknown>): Promis
     await axios.patch(`${BASE}/memory/dream-state`, {
       user_id: USER_ID,
       updates,
-    }, { timeout: 5000 });
+    }, { timeout: 15000 });
   } catch (e) {
     console.warn("[Memory] updateDreamState failed:", (e as Error).message);
   }
@@ -184,7 +184,7 @@ export async function logAction(
       success,
       skill_name: skillName,
       latency_ms: latencyMs,
-    }, { timeout: 5000 });
+    }, { timeout: 15000 });
   } catch (e) {
     console.warn("[Memory] logAction failed:", (e as Error).message);
   }
@@ -212,7 +212,7 @@ export async function recordSkillFeedback(
       steps_total: stepsTotal,
       latency_ms: latencyMs,
       heoster_continued: heosterContinued,
-    }, { timeout: 5000 });
+    }, { timeout: 15000 });
   } catch (e) {
     console.warn("[Memory] recordSkillFeedback failed:", (e as Error).message);
   }

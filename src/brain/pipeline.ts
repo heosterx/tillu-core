@@ -14,6 +14,7 @@ import type {
   ActionStep,
   ToolCall,
 } from "../types";
+import { flowObserver } from "../engines/flow-observer";
 
 export interface PipelineInput {
   userInput: string;
@@ -58,19 +59,24 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   const start = Date.now();
   const { userInput, contextSummary, userState, image, latestScreenshot } = input;
 
+  flowObserver.pipelineStarted(userInput);
+
   // ── Stage 1: Classify ──────────────────────────────────────────────────────
   const classification = await classify(userInput, contextSummary);
 
   // ── Short-circuit: simple conversation/question, no tools ─────────────────
   if (classification.short_circuit || !classification.has_action) {
     const text = await write(userInput, `Context: ${contextSummary}`, contextSummary, userState);
+    const output = {
+      response: { text, lang: "hi-en" },
+      action: null,
+    };
+    const latency = Date.now() - start;
+    flowObserver.pipelineCompleted(output, true, latency);
     return {
-      output: {
-        response: { text, lang: "hi-en" },
-        action: null,
-      },
+      output,
       classification,
-      latency_ms: Date.now() - start,
+      latency_ms: latency,
     };
   }
 
@@ -80,13 +86,16 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   if (planResult.tool_calls.length === 0) {
     // Planner returned nothing — write directly
     const text = await write(userInput, `Context: ${contextSummary}`, contextSummary, userState);
+    const output = {
+      response: classification.has_response ? { text, lang: "hi-en" } : null,
+      action: null,
+    };
+    const latency = Date.now() - start;
+    flowObserver.pipelineCompleted(output, true, latency);
     return {
-      output: {
-        response: classification.has_response ? { text, lang: "hi-en" } : null,
-        action: null,
-      },
+      output,
       classification,
-      latency_ms: Date.now() - start,
+      latency_ms: latency,
     };
   }
 
@@ -213,9 +222,13 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     };
   }
 
+  const output = { response, action };
+  const latency = Date.now() - start;
+  flowObserver.pipelineCompleted(output, true, latency);
+
   return {
-    output: { response, action },
+    output,
     classification,
-    latency_ms: Date.now() - start,
+    latency_ms: latency,
   };
 }

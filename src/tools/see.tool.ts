@@ -18,7 +18,7 @@ export async function see(
   question?: string
 ): Promise<SeeResult> {
   try {
-    const { data } = await axios.post(`${BASE}/see/analyze`, {
+    const { data } = await axios.post(`${BASE}/api/see/analyze`, {
       image: imageBase64,
       task,
       question,
