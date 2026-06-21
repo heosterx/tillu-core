@@ -10,3 +10,13 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: TILLU_MEMORY_URL
+        value: https://tillu-memory.vercel.app
+      - key: TILLU_SEARCH_URL
+        value: https://tillu-smart-search.vercel.app
+      - key: TILLU_VOICE_URL
+        value: https://tillu-voice.vercel.app
+      - key: TILLU_SEE_URL
+        value: https://tillu-see.vercel.app
+      - key: TILLU_NEWS_WEATHER_URL
+        value: https://tillu-news-weather.vercel.app

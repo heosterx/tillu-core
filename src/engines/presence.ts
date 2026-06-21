@@ -9,6 +9,7 @@ import {
 import { speak } from "../tools/voice.tool";
 import { runOnlineChecks } from "./proactive";
 import { HEOSTER } from "../types";
+import { config } from "../config";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -147,11 +148,18 @@ export function emitToUI(msg: OutboundUIMessage): void {
 
 // ─── Real-time Status Broadcasting ───────────────────────────────────────────
 
+// Lazy reference to avoid circular dependency at module load time.
+// tillu-alive imports presence, so we can't import it at the top level.
+let _getAliveState: (() => import("./tillu-alive").AliveState) | null = null;
+
+export function registerAliveState(fn: () => import("./tillu-alive").AliveState): void {
+  _getAliveState = fn;
+}
+
 export function broadcastStatusUpdate(): void {
   try {
-    const { getAliveState } = require("./tillu-alive");
-    const alive = getAliveState();
-    const { config } = require("../config");
+    if (!_getAliveState) return;
+    const alive = _getAliveState();
 
     emitToUI({
       type: "status_update",
@@ -161,16 +169,16 @@ export function broadcastStatusUpdate(): void {
         ui: state.ui_connected,
       },
       services: {
-        memory: alive.services.memory.ok,
-        search: alive.services.search.ok,
-        voice: alive.services.voice.ok,
-        see: alive.services.see.ok,
+        memory:      alive.services.memory.ok,
+        search:      alive.services.search.ok,
+        voice:       alive.services.voice.ok,
+        see:         alive.services.see.ok,
         newsWeather: alive.services.newsWeather.ok,
       },
       active_model: config.llm.groqModel.split("-").slice(0, 3).join("-"),
-      memory_ctx_size: 4096, // placeholder or dynamically derived
+      memory_ctx_size: 4096,
     });
-  } catch (e) {
+  } catch {
     // Avoid spamming logs if services aren't fully initialized yet
   }
 }

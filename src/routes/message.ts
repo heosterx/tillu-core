@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { runAgenticLoop } from "../engines/agentic-loop";
 import { loadContext } from "../tools/memory.tool";
-import { getContextSummary } from "../ws/sense-handler";
+import { getContextSummary, getLatestContext } from "../ws/sense-handler";
 
 /**
  * POST /message
@@ -18,11 +18,13 @@ export async function messageHandler(req: Request, res: Response): Promise<void>
 
   const sessionId = `sess_http_${Date.now()}`;
   const ctx = await loadContext(sessionId, text);
+  const senseCtx = getLatestContext();
 
   // Run loop but don't wait for full completion — return immediately
   void runAgenticLoop({
     userInput: text,
-    contextSummary: ctx.summary,
+    contextSummary: ctx.summary || getContextSummary(),
+    userState: senseCtx?.user_state,
     sessionId,
     image,
   });

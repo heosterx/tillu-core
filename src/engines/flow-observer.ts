@@ -4,7 +4,7 @@
  * emits flow-complete events, provides accurate status updates
  */
 
-import type { TilluOutput, ActionStep, Skill } from "../types";
+import type { TilluOutput, ActionStep } from "../types";
 import { emitToUI } from "./presence";
 
 // Observer events

@@ -164,6 +164,10 @@ export function getAliveState(): AliveState {
 }
 
 export function startTilluAlive(): void {
+  // Register alive state getter with presence engine (breaks circular dep)
+  const { registerAliveState } = require("./presence") as typeof import("./presence");
+  registerAliveState(getAliveState);
+
   // Initial service check on startup
   void checkServices();
 

@@ -6,7 +6,7 @@ import { getPresenceState } from "../engines/presence";
  * GET /dream/status
  * Dream Loop status and next scheduled run.
  */
-export function dreamStatusHandler(req: Request, res: Response): void {
+export function dreamStatusHandler(_req: Request, res: Response): void {
   const dream = getDreamLoopStatus();
   const presence = getPresenceState();
 
