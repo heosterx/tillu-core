@@ -250,12 +250,11 @@ async function executeSkillStep(step: SkillStep, vars: Record<string, unknown>):
         await addEvent(event);
         return { saved: true, summary: `Added: ${event.title}` };
       }
-      return null;
+      throw new Error(`Unknown calendar action: ${calAction}`);
     }
 
     default:
-      console.warn(`[SkillEngine] Unknown step action: ${action}`);
-      return null;
+      throw new Error(`Unknown skill step action: ${action}`);
   }
 }
 
