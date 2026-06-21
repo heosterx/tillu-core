@@ -107,6 +107,9 @@ process.on("SIGTERM", () => {
 
 process.on("uncaughtException", (err) => {
   console.error("[Core] Uncaught exception:", err);
+  // Allow logs to flush, then exit — the process is in an undefined state
+  server.close(() => process.exit(1));
+  setTimeout(() => process.exit(1), 3000);
 });
 
 process.on("unhandledRejection", (reason) => {

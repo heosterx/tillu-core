@@ -46,7 +46,8 @@ export async function runAgenticLoop(input: LoopInput): Promise<void> {
     try {
       const result = await runSkill(matchedSkill.skill);
       loopSuccess = result.success;
-      void evolveFromInteraction(userInput, `Executed skill: ${matchedSkill.skill}`, sessionId);
+      evolveFromInteraction(userInput, `Executed skill: ${matchedSkill.skill}`, sessionId)
+        .catch(e => console.warn("[Loop] Self-evolution after skill failed:", (e as Error).message));
       console.log(`[Loop] Skill done: ${result.success} in ${result.latency_ms}ms`);
     } catch (e) {
       loopSuccess = false;
@@ -57,18 +58,31 @@ export async function runAgenticLoop(input: LoopInput): Promise<void> {
 
   emitToUI({ type: "thought", step: "Thinking...", icon: "brain" });
 
-  const { output, classification, latency_ms: pipelineMs } = await runPipeline({
-    userInput,
-    contextSummary,
-    userState,
-    image: input.image,
-    latestScreenshot: input.latestScreenshot,
-  });
+  let output: TilluOutput;
+  let classification: import("../types").ClassifierOutput;
 
-  console.log(
-    `[Loop] Pipeline: ${pipelineMs}ms | intent=${classification.intent}` +
-    ` | has_response=${classification.has_response} | has_action=${classification.has_action}`
-  );
+  try {
+    const result = await runPipeline({
+      userInput,
+      contextSummary,
+      userState,
+      image: input.image,
+      latestScreenshot: input.latestScreenshot,
+    });
+    output = result.output;
+    classification = result.classification;
+
+    console.log(
+      `[Loop] Pipeline: ${result.latency_ms}ms | intent=${classification.intent}` +
+      ` | has_response=${classification.has_response} | has_action=${classification.has_action}`
+    );
+  } catch (e) {
+    const msg = (e as Error).message;
+    console.error("[Loop] Pipeline failed:", msg);
+    emitToUI({ type: "error", message: "Something went wrong processing your request.", recoverable: true });
+    emitToUI({ type: "response_text", text: "Sorry Heoster, I ran into an error. Try again?" });
+    return;
+  }
 
   // Response and desktop action execute in parallel
   await Promise.all([
@@ -77,16 +91,17 @@ export async function runAgenticLoop(input: LoopInput): Promise<void> {
   ]);
 
   // Save interaction to memory (fire-and-forget)
-  void writeMemory(
+  writeMemory(
     `Heoster asked: "${userInput.slice(0, 200)}"`,
     "event",
     "normal",
     sessionId
-  );
+  ).catch(e => console.warn("[Loop] Memory write failed:", (e as Error).message));
 
   // Trigger self-evolution (fire-and-forget)
   if (output.response?.text) {
-    void evolveFromInteraction(userInput, output.response.text, sessionId);
+    evolveFromInteraction(userInput, output.response.text, sessionId)
+      .catch(e => console.warn("[Loop] Self-evolution failed:", (e as Error).message));
   }
 
   console.log(`[Loop] Total: ${Date.now() - loopStart}ms`);
@@ -120,7 +135,8 @@ async function executeActionPath(output: TilluOutput, sessionId: string): Promis
     console.log(`[Loop] Action ${action.id} requires user confirmation. Pausing...`);
     registerConfirmation(action.id, () => {
       console.log(`[Loop] Action ${action.id} approved! Resuming execution...`);
-      void runActionSteps(action, sessionId, actionStart);
+      runActionSteps(action, sessionId, actionStart)
+        .catch(e => console.error("[Loop] Confirmed action execution failed:", (e as Error).message));
     });
     emitToUI({
       type: "action_confirm",
@@ -168,7 +184,8 @@ async function runActionSteps(action: TilluAction, sessionId: string, actionStar
   emitToUI({ type: "action_done", action_id: action.id, success: allSucceeded });
   flowObserver.actionPathCompleted(allSucceeded, stepsCompleted);
 
-  void logAction(action.id, action.plan[0]?.action ?? "unknown", allSucceeded, undefined, Date.now() - actionStart);
+  logAction(action.id, action.plan[0]?.action ?? "unknown", allSucceeded, undefined, Date.now() - actionStart)
+    .catch(e => console.warn("[Loop] Action log failed:", (e as Error).message));
 
   if (toolResults.length > 0) {
     emitToUI({ type: "response_card", card_type: "action_result", data: { results: toolResults, success: allSucceeded } });
