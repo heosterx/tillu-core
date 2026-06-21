@@ -6,7 +6,7 @@ import type { SkillStep } from "../types";
  * GET /skills
  * List all loaded skills with metadata.
  */
-export function skillsListHandler(_req: Request, res: Response): void {
+export async function skillsListHandler(_req: Request, res: Response): Promise<void> {
   const skills = getSkills().map(s => ({
     name: s.skill,
     description: s.description,

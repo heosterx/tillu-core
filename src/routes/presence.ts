@@ -6,7 +6,7 @@ import { getLatestContext } from "../ws/sense-handler";
  * GET /presence
  * Current online/offline state and latest Sense context.
  */
-export function presenceHandler(_req: Request, res: Response): void {
+export async function presenceHandler(_req: Request, res: Response): Promise<void> {
   const state = getPresenceState();
   const ctx = getLatestContext();
 

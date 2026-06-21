@@ -1,12 +1,13 @@
 /**
  * router.ts — Load-balanced LLM provider router
  *
- * Manages all 20 confirmed-working free models across 3 providers.
+ * Manages all confirmed-working free models across 3 providers.
  * Strategy:
  *   - Round-robin across providers (equal load distribution)
  *   - If a provider fails → cooldown → next provider takes over
- *   - Reasoning models (GPT-OSS, GLM, Nemotron) handled transparently
+ *   - Reasoning models (GPT-OSS, Qwen3, GLM, Nemotron) handled transparently
  *   - Each stage (classifier, planner, writer) gets its own pool
+ *   - Deprecated Groq models moved to fallback-only positions
  */
 
 import { config } from "../../config";
@@ -17,15 +18,18 @@ import Groq from "groq-sdk";
 
 export const WORKING_MODELS = {
   groq: [
-    "llama-3.3-70b-versatile",                  // 121ms  — primary planner/classifier
-    "llama-3.1-8b-instant",                     // 121ms  — fast, good for classification
-    "openai/gpt-oss-20b",                       // 232ms  — reasoning, good for planning
-    "qwen/qwen3-32b",                           // 460ms  — strong reasoning
-    "allam-2-7b",                               // 99ms   — fastest
-    "meta-llama/llama-4-scout-17b-16e-instruct",// 113ms  — multimodal capable
+    // ✔ Active & recommended
+    "openai/gpt-oss-20b",                       // 232ms  — reasoning, primary planner
+    "qwen/qwen3.6-27b",                         // ~350ms — strong reasoning (new June 2025)
+    "allam-2-7b",                               // 99ms   — fastest, classifier
     "groq/compound-mini",                       // 751ms  — agentic, has built-in tools
     "groq/compound",                            // 2.1s   — full agentic system
     "openai/gpt-oss-120b",                      // 2.1s   — largest, best quality
+    // ⚠ Deprecated / scheduled for removal — fallback only
+    "llama-3.3-70b-versatile",                  // DEPRECATED by Groq
+    "llama-3.1-8b-instant",                     // DEPRECATED by Groq
+    "qwen/qwen3-32b",                           // DEPRECATED by Groq
+    "meta-llama/llama-4-scout-17b-16e-instruct",// DEPRECATED by Groq
   ],
   cerebras: [
     "gpt-oss-120b",                             // 437ms  — reasoning model
@@ -46,11 +50,13 @@ export const WORKING_MODELS = {
 
 /**
  * Strip reasoning preamble from models that think out loud before answering.
- * GLM-4.7 and some Nemotron models output numbered analysis steps
- * before the actual response. We extract just the final answer.
+ * Handles both XML <think>...</think> tags (Qwen3) and numbered analysis steps.
  */
 function stripReasoningPreamble(text: string): string {
-  const t = text.trim();
+  let t = text.trim();
+
+  // Pattern 0: <think>...</think> XML block (Qwen3, DeepSeek-R1 style)
+  t = t.replace(/^<think>[\s\S]*?<\/think>\s*/i, "").trim();
 
   // Pattern 1: "1. **Analyze the Request:**..." — numbered analysis preamble
   if (/^1\.\s+\*\*/.test(t)) {
@@ -74,13 +80,14 @@ function stripReasoningPreamble(text: string): string {
     if (msgLine) return msgLine;
   }
 
-  return text;
+  return t;
 }
 
 // ─── Reasoning models — content lives in message.reasoning, not message.content
 
 const REASONING_MODELS = new Set([
   "openai/gpt-oss-120b", "openai/gpt-oss-20b",   // Groq GPT-OSS
+  "qwen/qwen3.6-27b", "qwen/qwen3-32b",          // Groq Qwen3 (think tags)
   "gpt-oss-120b",                                  // Cerebras GPT-OSS
   "zai-glm-4.7",                                   // Cerebras GLM
   "openai/gpt-oss-120b:free",                      // OpenRouter GPT-OSS
@@ -322,46 +329,54 @@ async function callOpenRouterProvider(
 
 /**
  * Classifier pool — fast models, JSON mode, ~200ms target
- * Ordered by speed within each provider
+ * Ordered: active non-deprecated first, deprecated fallback last
  */
 const CLASSIFIER_POOL: Array<{ provider: string; model: string }> = [
-  { provider: "groq",       model: "llama-3.1-8b-instant" },
+  { provider: "groq",       model: "allam-2-7b" },           // 99ms  — fastest active
   { provider: "cerebras",   model: "gpt-oss-120b" },
-  { provider: "groq",       model: "llama-3.3-70b-versatile" },
   { provider: "openrouter", model: "liquid/lfm-2.5-1.2b-instruct:free" },
+  { provider: "groq",       model: "openai/gpt-oss-20b" },   // reasoning but fast
   { provider: "cerebras",   model: "zai-glm-4.7" },
   { provider: "openrouter", model: "poolside/laguna-xs.2:free" },
-  { provider: "groq",       model: "allam-2-7b" },
+  // deprecated fallbacks
+  { provider: "groq",       model: "llama-3.1-8b-instant" },
+  { provider: "groq",       model: "llama-3.3-70b-versatile" },
 ];
 
 /**
  * Planner pool — structured output, function calling preferred
+ * Non-deprecated models first; deprecated Groq models as last resort
  */
 const PLANNER_POOL: Array<{ provider: string; model: string }> = [
-  { provider: "groq",       model: "llama-3.3-70b-versatile" },
-  { provider: "groq",       model: "openai/gpt-oss-20b" },
-  { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free" },
+  { provider: "groq",       model: "openai/gpt-oss-20b" },       // primary planner
+  { provider: "groq",       model: "qwen/qwen3.6-27b" },         // strong reasoning (new)
   { provider: "cerebras",   model: "gpt-oss-120b" },
-  { provider: "groq",       model: "qwen/qwen3-32b" },
-  { provider: "openrouter", model: "google/gemma-4-31b-it:free" },
+  { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free" },
   { provider: "cerebras",   model: "zai-glm-4.7" },
+  { provider: "openrouter", model: "google/gemma-4-31b-it:free" },
   { provider: "openrouter", model: "openai/gpt-oss-120b:free" },
+  // deprecated fallbacks
+  { provider: "groq",       model: "llama-3.3-70b-versatile" },
+  { provider: "groq",       model: "qwen/qwen3-32b" },
 ];
 
 /**
  * Writer pool — quality, warmth, Hindi/English mix
+ * Non-deprecated models first; deprecated Groq models as last resort
  */
 const WRITER_POOL: Array<{ provider: string; model: string }> = [
-  { provider: "groq",       model: "llama-3.3-70b-versatile" },
+  { provider: "groq",       model: "openai/gpt-oss-120b" },      // best quality
+  { provider: "groq",       model: "qwen/qwen3.6-27b" },         // strong writer (new)
   { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free" },
-  { provider: "groq",       model: "openai/gpt-oss-120b" },
   { provider: "cerebras",   model: "gpt-oss-120b" },
   { provider: "openrouter", model: "google/gemma-4-31b-it:free" },
-  { provider: "groq",       model: "qwen/qwen3-32b" },
   { provider: "openrouter", model: "z-ai/glm-4.5-air:free" },
   { provider: "cerebras",   model: "zai-glm-4.7" },
   { provider: "openrouter", model: "openrouter/owl-alpha" },
+  // deprecated fallbacks
+  { provider: "groq",       model: "llama-3.3-70b-versatile" },
   { provider: "groq",       model: "meta-llama/llama-4-scout-17b-16e-instruct" },
+  { provider: "groq",       model: "qwen/qwen3-32b" },
 ];
 
 // ─── Main router function ─────────────────────────────────────────────────────
