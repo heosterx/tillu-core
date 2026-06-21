@@ -7,7 +7,7 @@ import { getDreamLoopStatus } from "../engines/dream-loop";
  * Keep-alive endpoint for cron-job.org.
  * Pings every 10 minutes to prevent Render free tier sleep.
  */
-export function pingHandler(_req: Request, res: Response): void {
+export async function pingHandler(_req: Request, res: Response): Promise<void> {
   res.json({
     ok: true,
     service: "tillu-core",
