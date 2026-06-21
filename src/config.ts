@@ -11,13 +11,13 @@ export const config = {
     env: opt("NODE_ENV", "development"),
   },
   llm: {
-    // Cerebras — free model: GLM-4-9B (via OSSZ.ai on Cerebras)
+    // Cerebras — gpt-oss-120b (reasoning) + zai-glm-4.7
     cerebrasKey:      opt("CEREBRAS_API_KEY", ""),
-    cerebrasModel:    opt("CEREBRAS_MODEL", "GLM-4-9B"),
+    cerebrasModel:    opt("CEREBRAS_MODEL", "gpt-oss-120b"),
 
-    // Groq — primary planner + classifier fallback
+    // Groq — openai/gpt-oss-20b (primary), qwen/qwen3.6-27b (strong reasoning)
     groqKey:          opt("GROQ_API_KEY", ""),
-    groqModel:        opt("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    groqModel:        opt("GROQ_MODEL", "openai/gpt-oss-20b"),
 
     // Google Gemini — writer (replace key if suspended)
     googleKey:        opt("GOOGLE_AI_API_KEY", ""),

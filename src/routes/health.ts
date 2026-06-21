@@ -42,7 +42,10 @@ export async function healthHandler(_req: Request, res: Response): Promise<void>
       },
       groq: {
         key_set: !!config.llm.groqKey,
-        models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-20b", "qwen/qwen3-32b", "allam-2-7b"],
+        models: {
+          active: ["openai/gpt-oss-20b", "qwen/qwen3.6-27b", "allam-2-7b", "openai/gpt-oss-120b", "groq/compound-mini"],
+          deprecated_fallback: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b", "meta-llama/llama-4-scout-17b-16e-instruct"],
+        },
       },
       openrouter: {
         key_set: !!config.llm.openrouterKey,
